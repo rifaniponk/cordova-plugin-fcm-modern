@@ -53,7 +53,7 @@
         ]
     },
     "engines": {
-        "node": ">=22.0.0"
+        "node": ">=24.0.0"
     },
     "scripts": {
         "build": "node scripts/build.mjs",
@@ -62,8 +62,8 @@
         "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\" \"tests/**/*.ts\"",
         "test": "node scripts/test.mjs",
         "test:unit": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
-        "audit": "npm audit --audit-level=high",
-        "verify": "npm run format:check && npm run typecheck && npm run build && npm run test:unit && npm run audit && node scripts/verify-package.mjs"
+        "audit": "npm audit --audit-level=low",
+        "verify": "npm run format:check && npm run typecheck && npm run build && npm run test && npm run audit"
     },
     "files": [
         "dist",
@@ -118,7 +118,6 @@
     "devDependencies": {
         "@angular/compiler": "22.2.3",
         "@angular/core": "22.2.3",
-        "@capacitor/cli": "8.5.3",
         "@capacitor/core": "8.5.3",
         "@types/node": "26.6.5",
         "esbuild": "0.28.2",

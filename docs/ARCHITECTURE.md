@@ -83,8 +83,8 @@ docs/                        ARCHITECTURE.md, MIGRATION.md, payload reference
 | `eventTarget: EventTarget` | `notification` / `tokenRefresh` CustomEvents |
 | `IRequestPushPermissionOptions.ios9Support` | accepted, typed deprecated, ignored (no iOS 9 code) |
 
-Additive (new in 8): `getToken()` alias `deleteToken()`,
-`configureForegroundPresentation({alert,sound,badge})`,
+Additive (new in 8): `deleteToken()` as the honest name with `deleteInstanceId()` kept as
+its compatibility alias, `configureForegroundPresentation({alert,sound,badge})`,
 `initialize(options)/ready()`, `setAutoSubscribeTopics([])`, `version`.
 
 ## 4. Event, buffering and dedup semantics (normative)
@@ -201,14 +201,26 @@ no `npx` of unlocked tools, no dependency overrides.
 
 - No background JavaScript: FCM data messages only reach JS while the app runs (or via the
   buffered replay at next start for tap/cold-start cases the OS actually hands us).
-- No exactly-once delivery guarantee (FCM is at-least-once/best-effort).
+- Delivery is **best-effort**: duplicates and missed deliveries are both possible. This
+  plugin makes no at-least-once and no exactly-once promise at any layer.
 - iOS notification-handler ownership: if another SDK must own
   `UNUserNotificationCenterDelegate`, this plugin coexists by chaining but behaviour overlap is
   documented, not magic.
-- Native/device behaviour (real push round-trip, POST_NOTIFICATIONS dialog, SPM resolution)
-  is verified by compilation + fixtures here; on-device delivery checks stay with the app owner.
+- Compilation and fixture builds prove nothing about runtime behaviour. Real-device push
+  round-trips, the POST_NOTIFICATIONS dialog, APNs provisioning and SPM resolution on
+  macOS remain **pending** until executed on the appropriate host (§12).
 
-## 11. References (primary)
+## 11. Validation ledger (kept current; never infer a row from another row)
+
+| Check | Status |
+| --- | --- |
+| `npm ci`, build, typecheck, unit tests, `npm audit --audit-level=low` | run locally, passing |
+| Packed-tarball `import`/`require`/types resolution | script provided, run locally |
+| Android compile of plugin + Cordova/Capacitor fixtures (Gradle 8.14.3, JDK 21, SDK 36) | run locally |
+| iOS compile / SPM resolution / CocoaPods resolution | **pending — no macOS/Xcode here**; CI job configured only |
+| Real push round-trip, permission dialogs, notification tap behaviour | **pending — device/emulator + Firebase project required** |
+
+## 12. References (primary)
 
 Firebase releases / Cloud Messaging Android+iOS get-started & receive-messages / manage-tokens;
 Cordova platform guides (android, ios); Capacitor creating-plugins & SPM docs — URLs listed in

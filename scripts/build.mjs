@@ -23,9 +23,8 @@ const runTsc = () => {
 }
 
 const main = async () => {
-    for (const entry of ['esm', 'cjs', 'types', 'cordova']) {
-        rmSync(join(root, 'dist', entry), { recursive: true, force: true })
-    }
+    // Clean only dist/ — a build must never touch sources, fixtures or anything else.
+    rmSync(join(root, 'dist'), { recursive: true, force: true })
 
     runTsc()
 
