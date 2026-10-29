@@ -13,8 +13,12 @@ class FakeBridge implements IPluginBridge {
     public transportErrors: Array<{ message: string }> = []
     public readyBehaviour: 'ok' | 'fail' | 'hang' = 'ok'
     public attachFailure?: string
+    /** How many times the core detached a stream (teardown functions ran). */
+    public teardowns = 0
+    /** Returning a rejected `ready` lets a test model "native is offline right now". */
+    public readyFail?: string
     public readonly platformId: PlatformId
-    private failTransport?: (error: FCMError) => void
+    private failTransports: Array<(error: FCMError) => void> = []
 
     constructor(platformId: PlatformId = 'android') {
         this.platformId = platformId
@@ -39,6 +43,9 @@ class FakeBridge implements IPluginBridge {
         if (action === 'ready' && this.readyBehaviour === 'fail') {
             return Promise.reject(new Error('native bridge offline'))
         }
+        if (action === 'ready' && this.readyFail !== undefined) {
+            return Promise.reject(new Error(this.readyFail))
+        }
         if (action === 'ready' && this.readyBehaviour === 'hang') {
             return new Promise<T>(() => undefined)
         }
@@ -57,27 +64,51 @@ class FakeBridge implements IPluginBridge {
         listener: (event: NativeEvent) => void,
         onError?: (error: FCMError) => void
     ): () => void {
+        // The attachment slot is monotonic: a detached generation keeps its
+        // own (now inactive) callback so breakTransportAt(0) really models a
+        // stale callback from a dead stream rather than hitting the
+        // replacement, whose index depends on how many listeners survive.
+        const index = this.failTransports.length
         this.listeners.push(listener)
+        let active = true
         const report = (error: FCMError): void => {
             this.transportErrors.push(error)
-            onError?.(error)
+            if (active) {
+                onError?.(error)
+            }
         }
-        this.failTransport = report
+        this.failTransports[index] = report
         if (this.attachFailure !== undefined) {
             // Cordova reports a rejected keep-alive bridge synchronously, before
             // the handshake gets as far as `ready`.
             report(new FCMError('bridge_unavailable', this.attachFailure))
         }
         return () => {
-            const index = this.listeners.indexOf(listener)
-            if (index >= 0) {
-                this.listeners.splice(index, 1)
+            const position = this.listeners.indexOf(listener)
+            if (position >= 0) {
+                this.listeners.splice(position, 1)
             }
+            active = false
+            this.teardowns++
         }
     }
 
+    /** Fires the transport-error callback of the Nth attach (0-based). */
+    breakTransportAt(index: number, message: string): void {
+        this.failTransports[index]?.(new FCMError('bridge_unavailable', message))
+    }
+
+    /** How many streams have been attached in total, including detached ones. */
+    attachments(): number {
+        return this.failTransports.length
+    }
+
     breakTransport(message: string): void {
-        this.failTransport?.(new FCMError('bridge_unavailable', message))
+        // Cordova's keep-alive callback reports through whichever sink the most
+        // recent attach installed — older ones have been detached already.
+        this.failTransports[this.failTransports.length - 1]?.(
+            new FCMError('bridge_unavailable', message)
+        )
     }
 }
 
@@ -88,6 +119,17 @@ const readyCore = (bridge: FakeBridge, options = {}) => {
 
 /** Replay runs on the next microtask; tests must yield to it explicitly. */
 const tick = () => new Promise<void>((resolve) => queueMicrotask(resolve))
+
+/**
+ * Yields long enough for a promise chain of promise-resolved promises to run to
+ * completion — recovery attaches a replacement stream through several `await`
+ * hops, so a single microtask is not enough to observe its end state.
+ */
+const drainMicrotasks = async (): Promise<void> => {
+    for (let i = 0; i < 12; i++) {
+        await Promise.resolve()
+    }
+}
 
 test('cold-start notifications are buffered before any listener exists', async () => {
     const bridge = new FakeBridge()
@@ -619,4 +661,139 @@ test('an event stream that dies after ready still fails the same handshake', asy
         'replay is never requested for a handshake with no working sink'
     )
     core.dispose()
+})
+
+test('a stream that dies after the handshake re-attaches instead of faking health', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+    assert.equal(bridge.listeners.length, 1)
+
+    // The keep-alive sink dies long after `ready` answered. Nothing in the old
+    // design noticed: `initPromise` stayed fulfilled forever. Recovery is eager,
+    // so the dead stream is detached and its replacement is attached before this
+    // call even returns — no later API call is required to trigger it.
+    bridge.breakTransport('keep-alive callback fired an error')
+    assert.equal(bridge.teardowns, 1, 'the dead stream was detached exactly once')
+    assert.equal(bridge.listeners.length, 1, 'a replacement stream took over immediately')
+
+    await core.ready()
+    assert.equal(bridge.listeners.length, 1, 'the settled initialization was invalidated')
+    const handshakes = bridge.calls.filter((call) => call.action === 'ready').length
+    assert.equal(handshakes, 2, 'recovery ran a second handshake rather than reusing the memo')
+
+    const seen: string[] = []
+    core.onNotification((payload) => seen.push(String(payload.messageId)))
+    bridge.emit({
+        kind: 'notification',
+        payload: { wasTapped: false, messageId: 'after-recovery' }
+    })
+    assert.deepEqual(
+        seen,
+        ['after-recovery'],
+        'events delivered after recovery reach the existing listeners'
+    )
+    core.dispose()
+})
+
+test('recovery re-attaches on its own without any later call', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+
+    bridge.breakTransport('sink dropped while the app idled')
+    // An app that calls no further native API must still get the next message, so
+    // recovery may not wait for someone to ask.
+    await drainMicrotasks()
+    assert.equal(bridge.listeners.length, 1, 'the replacement sink is attached')
+
+    const seen: string[] = []
+    core.onNotification((payload) => seen.push(String(payload.messageId)))
+    bridge.emit({ kind: 'notification', payload: { wasTapped: false, messageId: 'idle-recovery' } })
+    assert.deepEqual(seen, ['idle-recovery'])
+    core.dispose()
+})
+
+test('a native call after a late stream failure goes through a working sink', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+    bridge.respond('getToken', () => 'token-after-recovery')
+
+    bridge.breakTransport('sink dropped by the OS')
+    // getToken awaits initialize(), so it must not resolve over a dead stream.
+    const token = await core.getToken()
+    assert.equal(token, 'token-after-recovery')
+    assert.equal(bridge.listeners.length, 1, 'the call path reattached a sink')
+
+    const seen: string[] = []
+    core.onTokenRefresh((tokenValue) => seen.push(tokenValue))
+    bridge.emit({ kind: 'tokenRefresh', token: 'pushed-after-recovery' })
+    await tick()
+    assert.deepEqual(seen, ['pushed-after-recovery'])
+    core.dispose()
+})
+
+test('a failed recovery leaves later calls retrying instead of sticking', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+
+    // Native is offline right now, so the eager reattach cannot succeed either.
+    bridge.readyFail = 'native restart in progress'
+    bridge.breakTransport('sink dropped')
+    await drainMicrotasks()
+    assert.equal(bridge.listeners.length, 0, 'the dead stream stayed detached while retry failed')
+
+    await assert.rejects(core.getToken(), (error: FCMError) => {
+        assert.equal(error.code, 'bridge_unavailable')
+        return true
+    })
+    bridge.readyFail = undefined
+    bridge.respond('getToken', () => 'token-retried')
+    assert.equal(await core.getToken(), 'token-retried', 'the retry answered getToken')
+    assert.equal(bridge.listeners.length, 1, 'the successful retry reattached the sink')
+    core.dispose()
+})
+
+test('a stale transport callback cannot tear down a newer bridge', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+
+    // Recovery detaches attach #0, but Cordova can still fire that generation's
+    // error callback afterwards (the native side tears down asynchronously).
+    bridge.breakTransportAt(0, 'first sink died')
+    assert.equal(bridge.listeners.length, 1, 'recovery attached a replacement stream')
+    const attachments = bridge.attachments()
+    bridge.breakTransportAt(0, 'stale callback from the dead generation')
+    await drainMicrotasks()
+
+    assert.equal(bridge.listeners.length, 1, 'the late callback must not detach the newer bridge')
+    assert.equal(bridge.teardowns, 1, 'exactly one teardown ran')
+    assert.equal(attachments, bridge.attachments(), 'no extra reattach was triggered')
+
+    const seen: string[] = []
+    core.onNotification((payload) => seen.push(String(payload.messageId)))
+    bridge.emit({ kind: 'notification', payload: { wasTapped: false, messageId: 'still-alive' } })
+    assert.deepEqual(seen, ['still-alive'])
+    core.dispose()
+})
+
+test('a transport error after dispose does not re-attach a bridge', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+    core.dispose()
+    const handshakes = bridge.calls.filter((call) => call.action === 'ready').length
+
+    bridge.breakTransportAt(0, 'late error after dispose')
+    await drainMicrotasks()
+
+    assert.equal(bridge.listeners.length, 0, 'a disposed core has no sink')
+    assert.equal(
+        bridge.calls.filter((call) => call.action === 'ready').length,
+        handshakes,
+        'recovery never runs after dispose'
+    )
 })

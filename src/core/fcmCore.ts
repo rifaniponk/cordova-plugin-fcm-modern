@@ -27,6 +27,20 @@ const CHANNEL_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,200}$/
 
 type Listener<T> = { callback: (value: T) => void; once: boolean }
 
+/**
+ * One initialization attempt, keyed by the bridge generation it attached.
+ * `settled` is what separates "fail this handshake" from "recover a healthy one":
+ * while the attempt is still running there is a promise to reject, afterwards
+ * there isn't and recovery has to reattach on its own.
+ */
+type StreamAttempt = {
+    /** True only once every handshake step has actually completed. */
+    settled: boolean
+    transportFailure?: FCMError
+    /** Bound after creation; used only to compare memo identity. */
+    promise?: Promise<void>
+}
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
     typeof value === 'object' && value !== null && !Array.isArray(value)
 
@@ -83,6 +97,14 @@ export class FCMCore {
 
     private initPromise: Promise<void> | null = null
     private bridgeTeardown: (() => void) | null = null
+    /**
+     * Bumped whenever the event stream is re-attached. A transport error callback
+     * captured by an older generation can still arrive after its teardown ran;
+     * the generation lets recovery ignore those stale callbacks instead of
+     * tearing down the newer bridge.
+     */
+    private bridgeGeneration = 0
+    private readonly attempts = new Map<number, StreamAttempt>()
     private initialPayloadCache: INotificationPayload | null | undefined
     private disposed = false
     private readonly bridge: IPluginBridge
@@ -134,7 +156,18 @@ export class FCMCore {
         if (this.initPromise !== null) {
             return this.initPromise
         }
-        const pending = this.runInitialization().catch((error: unknown) => {
+        const generation = this.bridgeGeneration + 1
+        const handshake = this.runInitialization()
+        if (handshake === null) {
+            return Promise.reject(
+                new FCMError('not_initialized', 'This FCM instance has been disposed')
+            )
+        }
+        // The attempt's memo identity must be the *exact* promise later calls
+        // reuse, so recovery can tell "this generation owns the memo" from "a
+        // newer generation replaced it". Binding the inner handshake promise here
+        // would compare two different objects and never clear the memo.
+        const pending = handshake.catch((error: unknown) => {
             // Clear the memo so a later call can retry after a transient failure
             // instead of sticking every future call to one rejected promise.
             if (this.initPromise === pending) {
@@ -143,6 +176,10 @@ export class FCMCore {
             throw error
         })
         this.initPromise = pending
+        const attempt = this.attempts.get(generation)
+        if (attempt !== undefined) {
+            attempt.promise = pending
+        }
         return pending
     }
 
@@ -150,37 +187,77 @@ export class FCMCore {
         return this.initialize()
     }
 
-    private async runInitialization(): Promise<void> {
-        if (this.bridge.runtime === 'web') {
-            throw new FCMError(
-                'unsupported_platform',
-                'This build has no browser push implementation',
-                {
-                    platform: this.bridge.platformId
-                }
-            )
+    /**
+     * The event stream can die after the handshake settled (Cordova's keep-alive
+     * error callback arrives whenever native drops the sink). `initPromise` is a
+     * settled memo, so without recovery every later `ready`/`getToken` reports
+     * success while there is no notification sink at all.
+     *
+     * Which of two shapes applies depends on whether the failing attempt has
+     * already settled. While a handshake is still in flight the failure is
+     * recorded for *that* attempt and fails its own promise (native answering
+     * `ready` must not mask a dead sink); once it has settled there is no promise
+     * left to fail, so recovery detaches, retires the memo and reattaches.
+     */
+    private handleStreamFailure(error: FCMError, generation: number): void {
+        if (this.disposed || generation !== this.bridgeGeneration) {
+            return
+        }
+        const failedAttempt = this.attempts.get(generation)
+        // A teardown this class initiated (dispose, or a recovery that already
+        // bumped the generation) leaves no live attempt for this generation.
+        if (failedAttempt === undefined) {
+            return
+        }
+        if (!failedAttempt.settled) {
+            // The handshake is still running, so there is a promise to fail:
+            // performHandshake's checkpoints pick this up.
+            failedAttempt.transportFailure ??= error
+            return
+        }
+        this.retireAttempt(generation)
+        // Clearing the memo is what makes a later call reattach. Comparing by
+        // identity (not by "is this promise settled") keeps a stale generation
+        // from clearing a newer attempt's memo.
+        if (this.initPromise === failedAttempt.promise) {
+            this.initPromise = null
+        }
+        // Reattach eagerly: an app that never calls a native API again should
+        // still receive the next notification. A failed reattach leaves the memo
+        // cleared, so the next `ready()`/native call retries.
+        void this.initialize().catch(() => undefined)
+    }
+
+    /** Detaches the stream of `generation` unless a newer attempt already owns it. */
+    private retireAttempt(generation: number): void {
+        this.attempts.delete(generation)
+        if (generation !== this.bridgeGeneration) {
+            return
+        }
+        this.teardownBridge()
+        this.bridgeGeneration++
+    }
+
+    /**
+     * The handshake proper. Kept separate from `initialize()` so the attempt's
+     * bookkeeping — registering it, then marking it settled at its real
+     * completion boundary — lives in one place.
+     */
+    private async performHandshake(attempt: StreamAttempt, generation: number): Promise<void> {
+        const takeTransportFailure = (): FCMError | null => {
+            const failure = attempt.transportFailure
+            attempt.transportFailure = undefined
+            return failure ?? null
         }
         // Attach the event bridge *before* asking native to replay, otherwise a
         // cold-start burst is emitted into a world with no receiver.
-        //
-        // The event stream has its own failure channel: Cordova's
-        // `startJsEventBridge` reports through the keep-alive error callback, which
-        // never rejects the `ready` promise. A handshake that ignores it would
-        // report success while the app silently had no sink, so the first transport
-        // failure is captured and fails this initialization instead.
-        let transportFailure: FCMError | undefined
-        const takeTransportFailure = (): FCMError | null => {
-            const failure = transportFailure
-            transportFailure = undefined
-            return failure ?? null
-        }
         this.bridgeTeardown = this.bridge.addEventListener(
-            (event) => this.handleNativeEvent(event),
-            (error) => {
-                if (transportFailure === undefined) {
-                    transportFailure = error
+            (event) => {
+                if (generation === this.bridgeGeneration) {
+                    this.handleNativeEvent(event)
                 }
-            }
+            },
+            (error) => this.handleStreamFailure(error, generation)
         )
         try {
             // Capacitor's addListener is asynchronous: until that promise settles
@@ -198,7 +275,7 @@ export class FCMCore {
                 throw readyFailure
             }
         } catch (error) {
-            this.teardownBridge()
+            this.retireAttempt(generation)
             // A timeout is a distinct diagnosis ("the native side never answered")
             // and must not be flattened into "the bridge is offline".
             if (isFCMError(error) && error.code === 'timeout') {
@@ -229,6 +306,57 @@ export class FCMCore {
         await this.callNative<void>('replayBufferedEvents')
     }
 
+    private runInitialization(): Promise<void> | null {
+        if (this.disposed) {
+            return null
+        }
+        if (this.bridge.runtime === 'web') {
+            return Promise.reject(
+                new FCMError(
+                    'unsupported_platform',
+                    'This build has no browser push implementation',
+                    {
+                        platform: this.bridge.platformId
+                    }
+                )
+            )
+        }
+        // The event stream has its own failure channel: Cordova's
+        // `startJsEventBridge` reports through the keep-alive error callback, which
+        // never rejects the `ready` promise. A handshake that ignores it would
+        // report success while the app silently had no sink, so the first transport
+        // failure is captured and fails this initialization instead.
+        const generation = ++this.bridgeGeneration
+        const attempt: StreamAttempt = { settled: false }
+        this.attempts.set(generation, attempt)
+        // The handshake really finished, so the stream is now an established sink
+        // whose later death is a recovery case rather than a startup failure. Any
+        // failure reported while the last await was still in flight is handed to
+        // recovery here.
+        const settled = this.performHandshake(attempt, generation).then(
+            () => {
+                attempt.settled = true
+                const late = attempt.transportFailure
+                if (late !== undefined && this.attempts.get(generation) === attempt) {
+                    attempt.transportFailure = undefined
+                    this.handleStreamFailure(late, generation)
+                }
+            },
+            (error: unknown) => {
+                // Failed attempts are retired above, in performHandshake.
+                throw error
+            }
+        )
+        // `settled` is the promise that carries the "the handshake completed"
+        // classification, so it must be observed before any caller of
+        // initialize() resumes. Chaining it *before* returning does exactly that:
+        // a caller's continuation is attached later and therefore runs after the
+        // flag is armed, which is what makes a synchronous break right after
+        // `await core.initialize()` take the recovery path instead of recording a
+        // failure nobody was left to read.
+        return settled.then(() => undefined)
+    }
+
     private teardownBridge(): void {
         if (this.bridgeTeardown !== null) {
             try {
@@ -247,6 +375,8 @@ export class FCMCore {
         }
         this.disposed = true
         this.teardownBridge()
+        this.bridgeGeneration++
+        this.attempts.clear()
         this.notificationListeners.length = 0
         this.tokenListeners.length = 0
         this.notifications.drain()
