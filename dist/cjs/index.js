@@ -39,6 +39,7 @@ __export(index_exports, {
 module.exports = __toCommonJS(index_exports);
 var import_fcmCore = require("./core/fcmCore.js");
 var import_runtimeBridge = require("./core/runtimeBridge.js");
+var import_instance = require("./core/instance.js");
 var import_cordovaBridge = require("./bridges/cordovaBridge.js");
 var import_webBridge = require("./bridges/webBridge.js");
 __reExport(index_exports, require("./core/index.js"), module.exports);
@@ -55,5 +56,5 @@ const loadBridge = async (runtime) => {
   return new import_webBridge.WebBridge();
 };
 const createFCM = (options = {}) => new import_fcmCore.FCMCore(new import_runtimeBridge.RuntimeBridge(loadBridge), options);
-const FCM = createFCM();
+const FCM = (0, import_instance.sharedFCM)(() => new import_fcmCore.FCMCore(new import_runtimeBridge.RuntimeBridge(loadBridge)));
 var index_default = FCM;

@@ -13,6 +13,7 @@ export declare class RuntimeBridge implements IPluginBridge {
     readonly runtime: RuntimeId;
     readonly platformId: PlatformId;
     private inner;
+    private resolvedInner;
     private pendingListener;
     private pendingErrorHandler;
     private innerTeardown;
@@ -23,8 +24,22 @@ export declare class RuntimeBridge implements IPluginBridge {
         platformId: PlatformId;
     });
     private resolveBridge;
+    /**
+     * Attaches the pending listener to whichever bridge object is live right now.
+     * Called both after the bridge resolves and when a listener attaches to an
+     * already-resolved bridge. Without that second path a core that retried a
+     * failed handshake would keep talking to a native transport that has no sink
+     * attached, so every cold-start event after the retry would be lost.
+     */
+    private attach;
     call<T = unknown>(action: string, args?: readonly unknown[]): Promise<T>;
     addEventListener(listener: (event: NativeEvent) => void, onError?: (error: FCMError) => void): () => void;
+    /**
+     * Forwards Capacitor's asynchronous listener registration. Resolving the
+     * inner bridge is part of the wait: registration cannot even start before the
+     * native plugin object exists.
+     */
+    waitForEventRegistration(): Promise<void>;
     /** Exposed for tests and diagnostics; never used to make a promise pend. */
     bridgeState(): {
         resolved: boolean;

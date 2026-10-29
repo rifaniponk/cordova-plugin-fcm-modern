@@ -17,6 +17,7 @@ var __copyProps = (to, from, except, desc) => {
   }
   return to;
 };
+var __reExport = (target, mod, secondTarget) => (__copyProps(target, mod, "default"), secondTarget && __copyProps(secondTarget, mod, "default"));
 var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
   // If the importer is in node compatibility mode or this is not an ESM
   // file that has been converted to a CommonJS file using a Babel-
@@ -38,9 +39,11 @@ __export(capacitor_exports, {
 module.exports = __toCommonJS(capacitor_exports);
 var import_fcmCore = require("../core/fcmCore.js");
 var import_runtimeBridge = require("../core/runtimeBridge.js");
+var import_instance = require("../core/instance.js");
 var import_capacitorBridge = require("../bridges/capacitorBridge.js");
 var import_webBridge = require("../bridges/webBridge.js");
 var import_capacitorBridge2 = require("../bridges/capacitorBridge.js");
+__reExport(capacitor_exports, require("../core/index.js"), module.exports);
 class WebFCMPlugin {
   unsupported(method) {
     return Promise.reject(
@@ -88,6 +91,12 @@ class WebFCMPlugin {
   createNotificationChannel() {
     return this.unsupported("createNotificationChannel");
   }
+  setAutoInitEnabled() {
+    return this.unsupported("setAutoInitEnabled");
+  }
+  isAutoInitEnabled() {
+    return this.unsupported("isAutoInitEnabled");
+  }
   addListener() {
     return Promise.resolve({ remove: () => Promise.resolve() });
   }
@@ -126,4 +135,4 @@ const createFCM = (options = {}) => {
   );
   return new import_fcmCore.FCMCore(bridge, options);
 };
-const FCM = createFCM();
+const FCM = (0, import_instance.sharedFCM)(() => createFCM());

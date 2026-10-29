@@ -4,10 +4,27 @@ import { CountingEventTarget, NOTIFICATION_EVENT, TOKEN_REFRESH_EVENT } from './
 import { sanitizeNotificationPayload } from './payload.js';
 const DEFAULT_CALL_TIMEOUT_MS = 15_000;
 const TOKEN_BUFFER_SIZE = 1;
-/** FCM topic name rules (UTF-8, 1..255 chars, first char A-Za-z~_.). */
-const TOPIC_PATTERN = /^[A-Za-z~_.%][A-Za-z0-9_%.-]{0,254}$/;
+/**
+ * FCM topic names: the documented Firebase ASCII set, with no restriction on the
+ * first character — a leading digit is valid ("9lives" is a legal topic name).
+ */
+const TOPIC_PATTERN = /^[a-zA-Z0-9\-_.~%]{1,900}$/;
 const CHANNEL_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,200}$/;
 const isRecord = (value) => typeof value === 'object' && value !== null && !Array.isArray(value);
+/** Native bridges disagree about booleans; Android has been seen sending 0/1. */
+const toBoolean = (value) => {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number') {
+        return value !== 0;
+    }
+    if (typeof value === 'string') {
+        const normalised = value.trim().toLowerCase();
+        return normalised === 'true' || normalised === '1';
+    }
+    return false;
+};
 const notifySafely = (listener, value, onError) => {
     try {
         listener.callback(value);
@@ -50,6 +67,9 @@ export class FCMCore {
             foregroundPresentation: options.foregroundPresentation
         };
         this.eventTarget = new CountingEventTarget();
+        // A listener attached directly on the event target is a subscriber too,
+        // so it has to trigger replay exactly like onNotification() does.
+        this.eventTarget.setOnSubscribe((type) => this.scheduleReplay(type === NOTIFICATION_EVENT ? 'notification' : 'tokenRefresh'));
         this.platformId = bridge.platformId;
         this.notifications = new EventBuffer(this.options.eventBufferSize, this.options.dedupCacheSize);
         this.tokens = new EventBuffer(TOKEN_BUFFER_SIZE, this.options.dedupCacheSize);
@@ -92,9 +112,38 @@ export class FCMCore {
         }
         // Attach the event bridge *before* asking native to replay, otherwise a
         // cold-start burst is emitted into a world with no receiver.
-        this.bridgeTeardown = this.bridge.addEventListener((event) => this.handleNativeEvent(event));
+        //
+        // The event stream has its own failure channel: Cordova's
+        // `startJsEventBridge` reports through the keep-alive error callback, which
+        // never rejects the `ready` promise. A handshake that ignores it would
+        // report success while the app silently had no sink, so the first transport
+        // failure is captured and fails this initialization instead.
+        let transportFailure;
+        const takeTransportFailure = () => {
+            const failure = transportFailure;
+            transportFailure = undefined;
+            return failure ?? null;
+        };
+        this.bridgeTeardown = this.bridge.addEventListener((event) => this.handleNativeEvent(event), (error) => {
+            if (transportFailure === undefined) {
+                transportFailure = error;
+            }
+        });
         try {
+            // Capacitor's addListener is asynchronous: until that promise settles
+            // the native side has nowhere to deliver, so replay must wait for it.
+            await this.awaitEventRegistration();
+            const registrationFailure = takeTransportFailure();
+            if (registrationFailure !== null) {
+                throw registrationFailure;
+            }
             await this.callNative('ready');
+            const readyFailure = takeTransportFailure();
+            if (readyFailure !== null) {
+                // `ready` answered, but the event stream died in the same
+                // handshake: the plugin is not usable yet.
+                throw readyFailure;
+            }
         }
         catch (error) {
             this.teardownBridge();
@@ -295,8 +344,16 @@ export class FCMCore {
         const call = this.bridge.call(action, args).then((value) => value, (error) => {
             throw toFCMError('native_error', error, `FCM native call "${action}" failed`, this.platformId);
         });
+        return this.withTimeout(call, `FCM native call "${action}"`);
+    }
+    /**
+     * Bounds a native promise by `callTimeoutMs`. The resulting error keeps the
+     * distinct `timeout` code: "the native side never answered" is a different
+     * diagnosis from "the bridge is offline" and must not be flattened.
+     */
+    withTimeout(work, label) {
         if (this.options.callTimeoutMs <= 0) {
-            return call;
+            return work;
         }
         return new Promise((resolve, reject) => {
             let settled = false;
@@ -305,7 +362,7 @@ export class FCMCore {
                     return;
                 }
                 settled = true;
-                reject(new FCMError('timeout', `FCM native call "${action}" timed out`, {
+                reject(new FCMError('timeout', `${label} timed out`, {
                     platform: this.platformId
                 }));
             }, this.options.callTimeoutMs);
@@ -313,7 +370,7 @@ export class FCMCore {
             // Node event loop drain and the process exit before the timeout
             // fires, which is exactly the "promise pending forever" failure this
             // guard exists to prevent. It is cleared on every settle below.
-            call.then((value) => {
+            work.then((value) => {
                 if (settled) {
                     return;
                 }
@@ -329,6 +386,18 @@ export class FCMCore {
                 reject(error);
             });
         });
+    }
+    /**
+     * Waits for an asynchronous native event registration (Capacitor) to settle
+     * before `ready`/`replayBufferedEvents` run. Bridges without asynchronous
+     * registration (Cordova's keep-alive callback) have nothing to wait for.
+     */
+    awaitEventRegistration() {
+        const registration = this.bridge.waitForEventRegistration?.();
+        if (registration === undefined) {
+            return Promise.resolve();
+        }
+        return this.withTimeout(registration, 'FCM native event listener registration');
     }
     /** Awaits initialization first, so callers never race the handshake. */
     async invoke(action, args = []) {
@@ -379,12 +448,12 @@ export class FCMCore {
         });
     }
     hasPermission() {
-        return this.invoke('hasPermission').then((value) => !!value);
+        return this.invoke('hasPermission').then(toBoolean);
     }
     requestPushPermission(options = {}) {
         // 7.x `ios9Support` is accepted so old call sites compile, and ignored.
         const { ios9Support: _ignored, ...rest } = options;
-        return this.invoke('requestPushPermission', [rest]).then((value) => !!value);
+        return this.invoke('requestPushPermission', [rest]).then(toBoolean);
     }
     subscribeToTopic(topic) {
         const invalid = this.topicError(topic);
@@ -402,6 +471,21 @@ export class FCMCore {
     }
     clearAllNotifications() {
         return this.invoke('clearAllNotifications').then(() => undefined);
+    }
+    /**
+     * Turns Firebase's own auto-initialisation on or off. Explicit by design:
+     * the host app owns the consent decision, the plugin never guesses it.
+     */
+    setAutoInitEnabled(enabled) {
+        if (typeof enabled !== 'boolean') {
+            return Promise.reject(new FCMError('invalid_argument', 'setAutoInitEnabled requires a boolean', {
+                platform: this.platformId
+            }));
+        }
+        return this.invoke('setAutoInitEnabled', [enabled]).then(() => undefined);
+    }
+    isAutoInitEnabled() {
+        return this.invoke('isAutoInitEnabled').then(toBoolean);
     }
     createNotificationChannel(channelConfig) {
         if (this.platformId !== 'android') {

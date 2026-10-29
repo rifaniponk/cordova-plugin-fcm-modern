@@ -3,6 +3,8 @@ import type { IChannelConfiguration, IForegroundPresentationOptions, IRequestPus
  * Wire contract implemented by the Capacitor native plugins (Android + iOS).
  * Every value-returning operation is wrapped in `{ value }` / `{ payload }`
  * so both platforms can use the same ReadableMap / dictionary shape.
+ * Arguments are objects, never bare strings: Capacitor marshals every method
+ * through one JS options object, so a bare string has no parameter to bind to.
  *
  * Event names emitted by the native side:
  *   - `notification`  → the native envelope (see src/core/payload.ts)
@@ -28,10 +30,20 @@ export interface FCMNativeContract {
     requestPushPermission(options: IRequestPushPermissionOptions): Promise<{
         value: boolean;
     }>;
-    subscribeToTopic(topic: string): Promise<void>;
-    unsubscribeFromTopic(topic: string): Promise<void>;
+    subscribeToTopic(options: {
+        topic: string;
+    }): Promise<void>;
+    unsubscribeFromTopic(options: {
+        topic: string;
+    }): Promise<void>;
     clearAllNotifications(): Promise<void>;
     createNotificationChannel(channel: IChannelConfiguration): Promise<void>;
+    setAutoInitEnabled(options: {
+        enabled: boolean;
+    }): Promise<void>;
+    isAutoInitEnabled(): Promise<{
+        value: boolean;
+    }>;
     addListener(eventName: 'notification', listenerFunc: (envelope: Record<string, unknown>) => void): Promise<FCMListenerHandle>;
     addListener(eventName: 'tokenRefresh', listenerFunc: (event: {
         token: string;

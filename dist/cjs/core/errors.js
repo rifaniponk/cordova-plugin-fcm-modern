@@ -47,20 +47,32 @@ class FCMError extends Error {
   }
 }
 const isFCMError = (value) => value instanceof FCMError || typeof value === "object" && value !== null && value.name === "FCMError" && typeof value.code === "string";
+const isSupportedCode = (value) => typeof value === "string" && FCM_ERROR_CODES.includes(value);
+const nativeCode = (raw) => {
+  if (typeof raw !== "object" || raw === null) {
+    return void 0;
+  }
+  const code = raw.code;
+  return isSupportedCode(code) ? code : void 0;
+};
 const toFCMError = (code, raw, fallbackMessage, platform) => {
-  if (isFCMError(raw)) {
+  if (raw instanceof FCMError) {
     return raw;
   }
+  const resolvedCode = nativeCode(raw) ?? code;
   if (raw instanceof Error) {
-    return new FCMError(code, raw.message || fallbackMessage, { platform, cause: raw });
+    return new FCMError(resolvedCode, raw.message || fallbackMessage, {
+      platform,
+      cause: raw
+    });
   }
   if (typeof raw === "string" && raw.length > 0) {
-    return new FCMError(code, raw, { platform, cause: raw });
+    return new FCMError(resolvedCode, raw, { platform, cause: raw });
   }
   if (typeof raw === "object" && raw !== null) {
     const record = raw;
     const message = typeof record.message === "string" && record.message.length > 0 ? record.message : fallbackMessage;
-    return new FCMError(code, message, { platform, cause: record.cause ?? raw });
+    return new FCMError(resolvedCode, message, { platform, cause: record.cause ?? raw });
   }
-  return new FCMError(code, fallbackMessage, { platform, cause: raw });
+  return new FCMError(resolvedCode, fallbackMessage, { platform, cause: raw });
 };

@@ -11,19 +11,28 @@ export const getCordovaHost = () => {
     return null;
 };
 const normalisePlatform = (value) => value === 'android' || value === 'ios' ? value : 'unknown';
-const toEvent = (raw) => {
+/**
+ * Cordova's keep-alive callback delivers one JSON string per event, shaped
+ * `[eventName, value]`. A structurally broken envelope is a transport defect and
+ * gets reported; an unknown event name is not, because a newer native core may
+ * add events and failing the bridge over one would drop everything else.
+ */
+export const parseNativeEnvelope = (raw) => {
     if (!Array.isArray(raw) || raw.length < 2) {
-        return null;
+        return 'malformed';
     }
-    const [name, data] = raw;
-    if (name === 'notification' && typeof data === 'object' && data !== null) {
-        return {
-            kind: 'notification',
-            payload: data
-        };
+    const [name, value] = raw;
+    if (name === 'notification') {
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            return 'malformed';
+        }
+        return { kind: 'notification', payload: value };
     }
-    if (name === 'tokenRefresh' && typeof data === 'string') {
-        return { kind: 'tokenRefresh', token: data };
+    if (name === 'tokenRefresh') {
+        if (typeof value !== 'string') {
+            return 'malformed';
+        }
+        return { kind: 'tokenRefresh', token: value };
     }
     return null;
 };
@@ -67,6 +76,9 @@ export class CordovaBridge {
         }
         this.attached = true;
         let active = true;
+        const report = (code, message, cause) => {
+            onTransportError?.(new FCMError(code, message, { platform: this.platformId, cause }));
+        };
         const onRaw = (data) => {
             if (!active) {
                 return;
@@ -79,13 +91,14 @@ export class CordovaBridge {
                 parsed = JSON.parse(data);
             }
             catch (error) {
-                onTransportError?.(new FCMError('native_error', 'Malformed native event payload', {
-                    platform: this.platformId,
-                    cause: error
-                }));
+                report('native_error', 'Malformed native event payload', error);
                 return;
             }
-            const event = toEvent(parsed);
+            const event = parseNativeEnvelope(parsed);
+            if (event === 'malformed') {
+                report('native_error', 'Native event does not match [eventName, value]');
+                return;
+            }
             if (event !== null) {
                 listener(event);
             }

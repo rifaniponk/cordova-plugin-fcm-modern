@@ -3,6 +3,7 @@ import type { IFCMOptions, IPluginBridge } from '../core/types.js';
 import type { FCMNativeContract } from './contract.js';
 export type { FCMNativeContract, FCMListenerHandle } from './contract.js';
 export { CapacitorBridge } from '../bridges/capacitorBridge.js';
+export * from '../core/index.js';
 /**
  * Capacitor's `registerPlugin` surface. Declared structurally so this module
  * type-checks without the optional Capacitor peer installed, and so the tests can
@@ -28,6 +29,7 @@ export type { IFCMOptions };
 /**
  * Instance created on first import. Auto-initialisation is on by default, so an
  * app that imports this subpath in `index.html`/`main.tsx` receives cold-start
- * events as soon as the native replay runs.
+ * events as soon as the native replay runs. It is the same shared instance the
+ * package root hands out, so a Capacitor app never ends up with two event sinks.
  */
 export declare const FCM: FCMCore;

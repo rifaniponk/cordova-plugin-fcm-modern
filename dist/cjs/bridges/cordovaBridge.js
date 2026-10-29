@@ -22,7 +22,8 @@ var cordovaBridge_exports = {};
 __export(cordovaBridge_exports, {
   BRIDGE_SERVICE: () => BRIDGE_SERVICE,
   CordovaBridge: () => CordovaBridge,
-  getCordovaHost: () => getCordovaHost
+  getCordovaHost: () => getCordovaHost,
+  parseNativeEnvelope: () => parseNativeEnvelope
 });
 module.exports = __toCommonJS(cordovaBridge_exports);
 var import_errors = require("../core/errors.js");
@@ -37,19 +38,22 @@ const getCordovaHost = () => {
   return null;
 };
 const normalisePlatform = (value) => value === "android" || value === "ios" ? value : "unknown";
-const toEvent = (raw) => {
+const parseNativeEnvelope = (raw) => {
   if (!Array.isArray(raw) || raw.length < 2) {
-    return null;
+    return "malformed";
   }
-  const [name, data] = raw;
-  if (name === "notification" && typeof data === "object" && data !== null) {
-    return {
-      kind: "notification",
-      payload: data
-    };
+  const [name, value] = raw;
+  if (name === "notification") {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return "malformed";
+    }
+    return { kind: "notification", payload: value };
   }
-  if (name === "tokenRefresh" && typeof data === "string") {
-    return { kind: "tokenRefresh", token: data };
+  if (name === "tokenRefresh") {
+    if (typeof value !== "string") {
+      return "malformed";
+    }
+    return { kind: "tokenRefresh", token: value };
   }
   return null;
 };
@@ -114,6 +118,9 @@ class CordovaBridge {
     }
     this.attached = true;
     let active = true;
+    const report = (code, message, cause) => {
+      onTransportError?.(new import_errors.FCMError(code, message, { platform: this.platformId, cause }));
+    };
     const onRaw = (data) => {
       if (!active) {
         return;
@@ -125,15 +132,14 @@ class CordovaBridge {
       try {
         parsed = JSON.parse(data);
       } catch (error) {
-        onTransportError?.(
-          new import_errors.FCMError("native_error", "Malformed native event payload", {
-            platform: this.platformId,
-            cause: error
-          })
-        );
+        report("native_error", "Malformed native event payload", error);
         return;
       }
-      const event = toEvent(parsed);
+      const event = parseNativeEnvelope(parsed);
+      if (event === "malformed") {
+        report("native_error", "Native event does not match [eventName, value]");
+        return;
+      }
       if (event !== null) {
         listener(event);
       }

@@ -48,6 +48,18 @@ export declare class FCMCore {
     onNotification(callback: (payload: INotificationPayload) => void, options?: IListenOptions): IDisposable;
     onTokenRefresh(callback: (token: string) => void, options?: IListenOptions): IDisposable;
     private callNative;
+    /**
+     * Bounds a native promise by `callTimeoutMs`. The resulting error keeps the
+     * distinct `timeout` code: "the native side never answered" is a different
+     * diagnosis from "the bridge is offline" and must not be flattened.
+     */
+    private withTimeout;
+    /**
+     * Waits for an asynchronous native event registration (Capacitor) to settle
+     * before `ready`/`replayBufferedEvents` run. Bridges without asynchronous
+     * registration (Cordova's keep-alive callback) have nothing to wait for.
+     */
+    private awaitEventRegistration;
     /** Awaits initialization first, so callers never race the handshake. */
     private invoke;
     getToken(): Promise<string>;
@@ -66,6 +78,12 @@ export declare class FCMCore {
     subscribeToTopic(topic: string): Promise<void>;
     unsubscribeFromTopic(topic: string): Promise<void>;
     clearAllNotifications(): Promise<void>;
+    /**
+     * Turns Firebase's own auto-initialisation on or off. Explicit by design:
+     * the host app owns the consent decision, the plugin never guesses it.
+     */
+    setAutoInitEnabled(enabled: boolean): Promise<void>;
+    isAutoInitEnabled(): Promise<boolean>;
     createNotificationChannel(channelConfig: IChannelConfiguration): Promise<void>;
     /** Opt-in: by default foreground messages are event-only. */
     configureForegroundPresentation(options: IForegroundPresentationOptions): Promise<void>;

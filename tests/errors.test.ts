@@ -46,3 +46,52 @@ test('toFCMError keeps an FCMError identity instead of double-wrapping it', () =
     assert.equal(wrapped, original)
     assert.equal(wrapped.code, 'unsupported_platform')
 })
+
+test('toFCMError preserves a supported code from either transport wire shape', () => {
+    // Capacitor rejects with an Error; the native code rides along as a field.
+    const capacitor = Object.assign(new Error('the native call timed out'), { code: 'timeout' })
+    const fromError = toFCMError('native_error', capacitor, 'fallback', 'ios')
+    assert.equal(
+        fromError.code,
+        'timeout',
+        '"the native side never answered" is a distinct diagnosis'
+    )
+    assert.equal(fromError.message, 'the native call timed out')
+    assert.equal(fromError.platform, 'ios')
+    assert.equal(fromError.cause, capacitor)
+
+    // Cordova rejects with a plain dictionary, not an Error instance.
+    const dict = { code: 'invalid_argument', message: 'topic name rejected' }
+    const fromDict = toFCMError('native_error', dict, 'fallback', 'android')
+    assert.equal(fromDict.code, 'invalid_argument')
+    assert.equal(fromDict.message, 'topic name rejected')
+    assert.ok(
+        fromDict instanceof FCMError,
+        'a dictionary rejection must still be catchable as an Error'
+    )
+    assert.ok(fromDict instanceof Error)
+})
+
+test('toFCMError rejects unsupported codes and always yields a real Error', () => {
+    const foreign = [
+        { code: 'UNIMPLEMENTED', message: 'capacitor vocabulary' },
+        { code: 'invented_by_a_fork', message: 'not a contract code' },
+        { code: 7, message: 'not even a string' }
+    ]
+    for (const raw of foreign) {
+        const mapped = toFCMError('native_error', raw, 'fallback')
+        assert.equal(mapped.code, 'native_error', `${raw.code} is not part of the contract`)
+        assert.ok(mapped instanceof FCMError)
+    }
+
+    // An object that only *looks* like an FCMError (a second bundled copy of the
+    // class, or a cross-realm rejection) is rebuilt: the caller gets a real Error
+    // and the supported code survives the rebuild.
+    const lookAlike = { name: 'FCMError', code: 'timeout', message: 'cross-realm timeout' }
+    const rebuilt = toFCMError('native_error', lookAlike, 'fallback')
+    assert.notEqual(rebuilt, lookAlike)
+    assert.ok(rebuilt instanceof FCMError)
+    assert.equal(rebuilt.code, 'timeout')
+    assert.equal(rebuilt.message, 'cross-realm timeout')
+    assert.equal(rebuilt.cause, lookAlike)
+})

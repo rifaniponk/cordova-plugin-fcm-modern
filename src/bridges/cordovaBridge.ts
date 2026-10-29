@@ -28,19 +28,28 @@ export const getCordovaHost = (): CordovaExecHost | null => {
 const normalisePlatform = (value: string | undefined): PlatformId =>
     value === 'android' || value === 'ios' ? value : 'unknown'
 
-const toEvent = (raw: unknown): NativeEvent | null => {
+/**
+ * Cordova's keep-alive callback delivers one JSON string per event, shaped
+ * `[eventName, value]`. A structurally broken envelope is a transport defect and
+ * gets reported; an unknown event name is not, because a newer native core may
+ * add events and failing the bridge over one would drop everything else.
+ */
+export const parseNativeEnvelope = (raw: unknown): NativeEvent | null | 'malformed' => {
     if (!Array.isArray(raw) || raw.length < 2) {
-        return null
+        return 'malformed'
     }
-    const [name, data] = raw
-    if (name === 'notification' && typeof data === 'object' && data !== null) {
-        return {
-            kind: 'notification',
-            payload: data as NativeEvent extends never ? never : Record<string, unknown>
-        } as NativeEvent
+    const [name, value] = raw
+    if (name === 'notification') {
+        if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+            return 'malformed'
+        }
+        return { kind: 'notification', payload: value as Record<string, unknown> } as NativeEvent
     }
-    if (name === 'tokenRefresh' && typeof data === 'string') {
-        return { kind: 'tokenRefresh', token: data }
+    if (name === 'tokenRefresh') {
+        if (typeof value !== 'string') {
+            return 'malformed'
+        }
+        return { kind: 'tokenRefresh', token: value }
     }
     return null
 }
@@ -119,6 +128,13 @@ export class CordovaBridge implements IPluginBridge {
         }
         this.attached = true
         let active = true
+        const report = (
+            code: 'native_error' | 'bridge_unavailable',
+            message: string,
+            cause?: unknown
+        ): void => {
+            onTransportError?.(new FCMError(code, message, { platform: this.platformId, cause }))
+        }
         const onRaw = (data: unknown): void => {
             if (!active) {
                 return
@@ -130,15 +146,14 @@ export class CordovaBridge implements IPluginBridge {
             try {
                 parsed = JSON.parse(data)
             } catch (error) {
-                onTransportError?.(
-                    new FCMError('native_error', 'Malformed native event payload', {
-                        platform: this.platformId,
-                        cause: error
-                    })
-                )
+                report('native_error', 'Malformed native event payload', error)
                 return
             }
-            const event = toEvent(parsed)
+            const event = parseNativeEnvelope(parsed)
+            if (event === 'malformed') {
+                report('native_error', 'Native event does not match [eventName, value]')
+                return
+            }
             if (event !== null) {
                 listener(event)
             }

@@ -35,6 +35,24 @@ export const isFCMError = (value: unknown): value is FCMError =>
         (value as { name?: string }).name === 'FCMError' &&
         typeof (value as { code?: unknown }).code === 'string')
 
+const isSupportedCode = (value: unknown): value is FCMErrorCode =>
+    typeof value === 'string' && (FCM_ERROR_CODES as readonly string[]).includes(value)
+
+/**
+ * Reads a diagnostic code off whatever the native side rejected with: a
+ * Capacitor `Error` with a `code` field, a Cordova failure dictionary, or a
+ * cross-realm FCMError-shaped object. Codes outside `FCM_ERROR_CODES` (for
+ * instance Capacitor's `UNIMPLEMENTED`) carry no meaning for this API and are
+ * discarded so the caller's own diagnosis wins.
+ */
+const nativeCode = (raw: unknown): FCMErrorCode | undefined => {
+    if (typeof raw !== 'object' || raw === null) {
+        return undefined
+    }
+    const code = (raw as { code?: unknown }).code
+    return isSupportedCode(code) ? code : undefined
+}
+
 /** Normalises whatever a native bridge rejected into an FCMError. */
 export const toFCMError = (
     code: FCMErrorCode,
@@ -42,14 +60,22 @@ export const toFCMError = (
     fallbackMessage: string,
     platform?: string
 ): FCMError => {
-    if (isFCMError(raw)) {
+    // Only a *real* FCMError keeps its identity; an object that merely looks like
+    // one (a second bundled copy of this class, a cross-realm rejection) is
+    // rebuilt here so callers always catch an actual Error, while its supported
+    // code — "timeout" stays "timeout" — survives the rebuild.
+    if (raw instanceof FCMError) {
         return raw
     }
+    const resolvedCode = nativeCode(raw) ?? code
     if (raw instanceof Error) {
-        return new FCMError(code, raw.message || fallbackMessage, { platform, cause: raw })
+        return new FCMError(resolvedCode, raw.message || fallbackMessage, {
+            platform,
+            cause: raw
+        })
     }
     if (typeof raw === 'string' && raw.length > 0) {
-        return new FCMError(code, raw, { platform, cause: raw })
+        return new FCMError(resolvedCode, raw, { platform, cause: raw })
     }
     if (typeof raw === 'object' && raw !== null) {
         const record = raw as { message?: unknown; cause?: unknown }
@@ -57,7 +83,7 @@ export const toFCMError = (
             typeof record.message === 'string' && record.message.length > 0
                 ? record.message
                 : fallbackMessage
-        return new FCMError(code, message, { platform, cause: record.cause ?? raw })
+        return new FCMError(resolvedCode, message, { platform, cause: record.cause ?? raw })
     }
-    return new FCMError(code, fallbackMessage, { platform, cause: raw })
+    return new FCMError(resolvedCode, fallbackMessage, { platform, cause: raw })
 }

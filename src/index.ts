@@ -1,5 +1,6 @@
 import { FCMCore } from './core/fcmCore.js'
 import { RuntimeBridge } from './core/runtimeBridge.js'
+import { sharedFCM } from './core/instance.js'
 import { CordovaBridge } from './bridges/cordovaBridge.js'
 import { WebBridge } from './bridges/webBridge.js'
 import type { IPluginBridge, RuntimeId } from './core/types.js'
@@ -32,7 +33,11 @@ export const loadBridge = async (runtime: RuntimeId): Promise<IPluginBridge> => 
 export const createFCM = (options: IFCMOptions = {}): FCMCore =>
     new FCMCore(new RuntimeBridge(loadBridge), options)
 
-/** Shared instance for `import FCM from 'cordova-plugin-fcm-modern'`. */
-export const FCM = createFCM()
+/**
+ * Shared instance for `import FCM from 'cordova-plugin-fcm-modern'`. The Cordova
+ * bundle and the npm CJS/ESM paths reuse it, so one app always has exactly one
+ * event sink and one replay buffer (see src/core/instance.ts).
+ */
+export const FCM = sharedFCM(() => new FCMCore(new RuntimeBridge(loadBridge)))
 
 export default FCM

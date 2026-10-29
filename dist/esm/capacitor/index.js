@@ -1,8 +1,12 @@
 import { FCMCore } from '../core/fcmCore.js';
 import { RuntimeBridge } from '../core/runtimeBridge.js';
+import { sharedFCM } from '../core/instance.js';
 import { CapacitorBridge } from '../bridges/capacitorBridge.js';
 import { WebBridge } from '../bridges/webBridge.js';
 export { CapacitorBridge } from '../bridges/capacitorBridge.js';
+// Same public core surface the root and Cordova entries expose, so picking a
+// runtime subpath never costs an app part of the public API.
+export * from '../core/index.js';
 /** Web stand-in required by Capacitor's plugin registry: fails, never hangs. */
 class WebFCMPlugin {
     unsupported(method) {
@@ -46,6 +50,12 @@ class WebFCMPlugin {
     }
     createNotificationChannel() {
         return this.unsupported('createNotificationChannel');
+    }
+    setAutoInitEnabled() {
+        return this.unsupported('setAutoInitEnabled');
+    }
+    isAutoInitEnabled() {
+        return this.unsupported('isAutoInitEnabled');
     }
     addListener() {
         return Promise.resolve({ remove: () => Promise.resolve() });
@@ -92,6 +102,7 @@ export { FCMCore };
 /**
  * Instance created on first import. Auto-initialisation is on by default, so an
  * app that imports this subpath in `index.html`/`main.tsx` receives cold-start
- * events as soon as the native replay runs.
+ * events as soon as the native replay runs. It is the same shared instance the
+ * package root hands out, so a Capacitor app never ends up with two event sinks.
  */
-export const FCM = createFCM();
+export const FCM = sharedFCM(() => createFCM());

@@ -29,44 +29,67 @@ class CapacitorBridge {
     __publicField(this, "runtime", "capacitor");
     __publicField(this, "platformId");
     __publicField(this, "plugin");
+    __publicField(this, "registration", null);
     this.plugin = plugin;
     this.platformId = platformId;
   }
+  /** Resolves once the asynchronous `addListener` registrations have settled. */
+  waitForEventRegistration() {
+    return this.registration ?? Promise.resolve();
+  }
+  /**
+   * Looks a native method up by name and rejects when it is absent, instead of
+   * silently resolving `undefined` the way `plugin.getToken?.()` would.
+   */
+  method(name) {
+    const candidate = this.plugin[name];
+    if (typeof candidate !== "function") {
+      throw new import_errors.FCMError(
+        "bridge_unavailable",
+        `Capacitor plugin "FCMPlugin" does not implement "${name}"`,
+        { platform: this.platformId }
+      );
+    }
+    return candidate.bind(this.plugin);
+  }
   async dispatch(action, args) {
-    const plugin = this.plugin;
     const unwrapValue = async (call) => {
       const result = await call;
       return result?.value;
     };
     switch (action) {
       case "ready":
-        return plugin.ready?.();
+        return this.method("ready")();
       case "replayBufferedEvents":
-        return plugin.replayBufferedEvents?.();
+        return this.method("replayBufferedEvents")();
       case "setForegroundPresentation":
-        return plugin.setForegroundPresentation?.(args[0]);
+        return this.method("setForegroundPresentation")(args[0]);
       case "getToken":
-        return unwrapValue(plugin.getToken?.());
+        return unwrapValue(this.method("getToken")());
       case "deleteToken":
-        return plugin.deleteToken?.();
+        return this.method("deleteToken")();
       case "getAPNSToken":
-        return unwrapValue(plugin.getAPNSToken?.());
+        return unwrapValue(this.method("getAPNSToken")());
       case "getInitialPushPayload": {
-        const result = await plugin.getInitialPushPayload?.();
+        const result = await this.method("getInitialPushPayload")();
         return result?.payload ?? null;
       }
       case "hasPermission":
-        return unwrapValue(plugin.hasPermission?.());
+        return unwrapValue(this.method("hasPermission")());
       case "requestPushPermission":
-        return unwrapValue(plugin.requestPushPermission?.(args[0]));
+        return unwrapValue(this.method("requestPushPermission")(args[0]));
       case "subscribeToTopic":
-        return plugin.subscribeToTopic?.(String(args[0]));
+        return this.method("subscribeToTopic")({ topic: String(args[0]) });
       case "unsubscribeFromTopic":
-        return plugin.unsubscribeFromTopic?.(String(args[0]));
+        return this.method("unsubscribeFromTopic")({ topic: String(args[0]) });
       case "clearAllNotifications":
-        return plugin.clearAllNotifications?.();
+        return this.method("clearAllNotifications")();
       case "createNotificationChannel":
-        return plugin.createNotificationChannel?.(args[0]);
+        return this.method("createNotificationChannel")(args[0]);
+      case "setAutoInitEnabled":
+        return this.method("setAutoInitEnabled")({ enabled: args[0] === true });
+      case "isAutoInitEnabled":
+        return unwrapValue(this.method("isAutoInitEnabled")());
       case "stopJsEventBridge":
         return void 0;
       default:
@@ -86,56 +109,56 @@ class CapacitorBridge {
     });
   }
   addEventListener(listener, onTransportError) {
-    const handles = [];
     let detached = false;
-    const pending = [];
-    pending.push(
-      this.plugin.addListener("notification", (envelope) => {
-        if (detached) {
-          return;
-        }
-        listener({ kind: "notification", payload: envelope });
-      }).then((handle) => {
-        handles.push(handle);
-        if (detached) {
-          void handle.remove().catch(() => void 0);
-        }
-        return handle;
-      })
-    );
-    pending.push(
-      this.plugin.addListener("tokenRefresh", (event) => {
-        if (detached) {
-          return;
-        }
-        listener({ kind: "tokenRefresh", token: event?.token ?? "" });
-      }).then((handle) => {
-        handles.push(handle);
-        if (detached) {
-          void handle.remove().catch(() => void 0);
-        }
-        return handle;
-      })
-    );
-    for (const handle of pending) {
-      handle.catch((error) => {
-        onTransportError?.(
-          (0, import_errors.toFCMError)(
-            "bridge_unavailable",
-            error,
-            "Capacitor listener registration failed",
-            this.platformId
-          )
-        );
-      });
-    }
+    const live = [];
+    const removed = /* @__PURE__ */ new Set();
+    const removeOnce = (handle) => {
+      if (removed.has(handle)) {
+        return;
+      }
+      removed.add(handle);
+      void handle.remove().catch(() => void 0);
+    };
+    const adopt = (handle) => {
+      if (detached) {
+        removeOnce(handle);
+      } else {
+        live.push(handle);
+      }
+      return handle;
+    };
+    const notification = this.plugin.addListener("notification", (envelope) => {
+      if (detached) {
+        return;
+      }
+      listener({ kind: "notification", payload: envelope });
+    }).then(adopt);
+    const tokenRefresh = this.plugin.addListener("tokenRefresh", (event) => {
+      if (detached) {
+        return;
+      }
+      listener({ kind: "tokenRefresh", token: event?.token ?? "" });
+    }).then(adopt);
+    const pending = [notification, tokenRefresh];
+    const settled = Promise.all(pending).then(() => void 0);
+    settled.catch((error) => {
+      onTransportError?.(
+        (0, import_errors.toFCMError)(
+          "bridge_unavailable",
+          error,
+          "Capacitor listener registration failed",
+          this.platformId
+        )
+      );
+    });
+    this.registration = settled;
     return () => {
       detached = true;
-      for (const handle of handles) {
-        void handle.remove().catch(() => void 0);
+      for (const handle of live) {
+        removeOnce(handle);
       }
       for (const handle of pending) {
-        void handle.then((resolved) => resolved.remove()).catch(() => void 0);
+        void handle.then((resolved) => removeOnce(resolved)).catch(() => void 0);
       }
     };
   }

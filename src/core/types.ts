@@ -119,6 +119,14 @@ export interface IPluginBridge {
         listener: (event: NativeEvent) => void,
         onTransportError?: (error: FCMError) => void
     ): () => void
+    /**
+     * Optional: resolves once an asynchronous native event registration (Capacitor
+     * `addListener` returns a promise) has actually completed. The core awaits this
+     * between attaching the listener and asking native for `ready` /
+     * `replayBufferedEvents`, otherwise a cold-start burst can be emitted while the
+     * registration is still in flight and the events are lost.
+     */
+    waitForEventRegistration?(): Promise<void>
 }
 
 export interface IFCMOptions {

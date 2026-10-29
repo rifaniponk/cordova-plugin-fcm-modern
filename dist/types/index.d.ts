@@ -15,6 +15,10 @@ export declare const loadBridge: (runtime: RuntimeId) => Promise<IPluginBridge>;
  * runtimes; pick `.../cordova` or `.../capacitor` when you want the explicit one.
  */
 export declare const createFCM: (options?: IFCMOptions) => FCMCore;
-/** Shared instance for `import FCM from 'cordova-plugin-fcm-modern'`. */
+/**
+ * Shared instance for `import FCM from 'cordova-plugin-fcm-modern'`. The Cordova
+ * bundle and the npm CJS/ESM paths reuse it, so one app always has exactly one
+ * event sink and one replay buffer (see src/core/instance.ts).
+ */
 export declare const FCM: FCMCore;
 export default FCM;

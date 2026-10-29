@@ -1,5 +1,6 @@
 import { FCMCore } from '../core/fcmCore.js'
 import { RuntimeBridge } from '../core/runtimeBridge.js'
+import { sharedFCM } from '../core/instance.js'
 import type { IFCMOptions, IPluginBridge } from '../core/types.js'
 import { CapacitorBridge } from '../bridges/capacitorBridge.js'
 import { WebBridge } from '../bridges/webBridge.js'
@@ -7,6 +8,9 @@ import type { FCMListenerHandle, FCMNativeContract } from './contract.js'
 
 export type { FCMNativeContract, FCMListenerHandle } from './contract.js'
 export { CapacitorBridge } from '../bridges/capacitorBridge.js'
+// Same public core surface the root and Cordova entries expose, so picking a
+// runtime subpath never costs an app part of the public API.
+export * from '../core/index.js'
 
 /**
  * Capacitor's `registerPlugin` surface. Declared structurally so this module
@@ -65,6 +69,12 @@ class WebFCMPlugin implements Partial<FCMNativeContract> {
     }
     createNotificationChannel(): Promise<void> {
         return this.unsupported('createNotificationChannel')
+    }
+    setAutoInitEnabled(): Promise<void> {
+        return this.unsupported('setAutoInitEnabled')
+    }
+    isAutoInitEnabled(): Promise<{ value: boolean }> {
+        return this.unsupported('isAutoInitEnabled')
     }
     addListener(): Promise<FCMListenerHandle> {
         return Promise.resolve({ remove: () => Promise.resolve() })
@@ -129,6 +139,7 @@ export type { IFCMOptions }
 /**
  * Instance created on first import. Auto-initialisation is on by default, so an
  * app that imports this subpath in `index.html`/`main.tsx` receives cold-start
- * events as soon as the native replay runs.
+ * events as soon as the native replay runs. It is the same shared instance the
+ * package root hands out, so a Capacitor app never ends up with two event sinks.
  */
-export const FCM = createFCM()
+export const FCM = sharedFCM(() => createFCM())

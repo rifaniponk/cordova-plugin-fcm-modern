@@ -16,10 +16,11 @@ export class RuntimeBridge implements IPluginBridge {
     public readonly platformId: PlatformId
 
     private inner: Promise<IPluginBridge> | null = null
+    private resolvedInner: IPluginBridge | null = null
     private pendingListener: ((event: NativeEvent) => void) | null = null
     private pendingErrorHandler: ((error: FCMError) => void) | undefined
     private innerTeardown: (() => void) | null = null
-    private detached = false
+    private detached = true
     private readonly loader: (runtime: RuntimeId) => Promise<IPluginBridge>
 
     constructor(
@@ -34,20 +35,44 @@ export class RuntimeBridge implements IPluginBridge {
 
     private resolveBridge(): Promise<IPluginBridge> {
         if (this.inner === null) {
-            this.inner = this.loader(this.runtime).then((bridge) => {
-                if (this.detached) {
+            const pending = this.loader(this.runtime).then(
+                (bridge) => {
+                    this.resolvedInner = bridge
+                    this.attach()
                     return bridge
+                },
+                (error: unknown) => {
+                    // A failed load must not be memoised: the next call retries
+                    // the loader instead of inheriting one rejected promise.
+                    if (this.inner === pending) {
+                        this.inner = null
+                    }
+                    throw error
                 }
-                if (this.pendingListener !== null) {
-                    this.innerTeardown = bridge.addEventListener(
-                        this.pendingListener,
-                        this.pendingErrorHandler
-                    )
-                }
-                return bridge
-            })
+            )
+            this.inner = pending
         }
         return this.inner
+    }
+
+    /**
+     * Attaches the pending listener to whichever bridge object is live right now.
+     * Called both after the bridge resolves and when a listener attaches to an
+     * already-resolved bridge. Without that second path a core that retried a
+     * failed handshake would keep talking to a native transport that has no sink
+     * attached, so every cold-start event after the retry would be lost.
+     */
+    private attach(): void {
+        if (this.detached || this.pendingListener === null || this.resolvedInner === null) {
+            return
+        }
+        if (this.innerTeardown !== null) {
+            return
+        }
+        this.innerTeardown = this.resolvedInner.addEventListener(
+            this.pendingListener,
+            this.pendingErrorHandler
+        )
     }
 
     public call<T = unknown>(action: string, args: readonly unknown[] = []): Promise<T> {
@@ -61,6 +86,7 @@ export class RuntimeBridge implements IPluginBridge {
         this.pendingListener = listener
         this.pendingErrorHandler = onError
         this.detached = false
+        this.attach()
         return () => {
             this.detached = true
             this.pendingListener = null
@@ -71,8 +97,21 @@ export class RuntimeBridge implements IPluginBridge {
         }
     }
 
+    /**
+     * Forwards Capacitor's asynchronous listener registration. Resolving the
+     * inner bridge is part of the wait: registration cannot even start before the
+     * native plugin object exists.
+     */
+    public waitForEventRegistration(): Promise<void> {
+        return this.resolveBridge().then((bridge) => bridge.waitForEventRegistration?.())
+    }
+
     /** Exposed for tests and diagnostics; never used to make a promise pend. */
     public bridgeState(): { resolved: boolean; runtime: RuntimeId; platformId: PlatformId } {
-        return { resolved: this.inner !== null, runtime: this.runtime, platformId: this.platformId }
+        return {
+            resolved: this.resolvedInner !== null,
+            runtime: this.runtime,
+            platformId: this.platformId
+        }
     }
 }

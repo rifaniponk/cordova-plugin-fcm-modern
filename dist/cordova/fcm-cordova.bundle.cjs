@@ -26,11 +26,14 @@ __export(index_exports, {
   FCM: () => FCM,
   FCMCore: () => FCMCore,
   FCMError: () => FCMError,
+  FCMPlugin: () => FCMCore,
   FCM_ERROR_CODES: () => FCM_ERROR_CODES,
   createFCM: () => createFCM,
   default: () => index_default,
   getCordovaHost: () => getCordovaHost,
   isFCMError: () => isFCMError,
+  sharedFCM: () => sharedFCM,
+  sharedFCMKey: () => sharedFCMKey,
   toFCMError: () => toFCMError
 });
 module.exports = __toCommonJS(index_exports);
@@ -57,22 +60,34 @@ var FCMError = class extends Error {
   }
 };
 var isFCMError = (value) => value instanceof FCMError || typeof value === "object" && value !== null && value.name === "FCMError" && typeof value.code === "string";
+var isSupportedCode = (value) => typeof value === "string" && FCM_ERROR_CODES.includes(value);
+var nativeCode = (raw) => {
+  if (typeof raw !== "object" || raw === null) {
+    return void 0;
+  }
+  const code = raw.code;
+  return isSupportedCode(code) ? code : void 0;
+};
 var toFCMError = (code, raw, fallbackMessage, platform) => {
-  if (isFCMError(raw)) {
+  if (raw instanceof FCMError) {
     return raw;
   }
+  const resolvedCode = nativeCode(raw) ?? code;
   if (raw instanceof Error) {
-    return new FCMError(code, raw.message || fallbackMessage, { platform, cause: raw });
+    return new FCMError(resolvedCode, raw.message || fallbackMessage, {
+      platform,
+      cause: raw
+    });
   }
   if (typeof raw === "string" && raw.length > 0) {
-    return new FCMError(code, raw, { platform, cause: raw });
+    return new FCMError(resolvedCode, raw, { platform, cause: raw });
   }
   if (typeof raw === "object" && raw !== null) {
     const record = raw;
     const message = typeof record.message === "string" && record.message.length > 0 ? record.message : fallbackMessage;
-    return new FCMError(code, message, { platform, cause: record.cause ?? raw });
+    return new FCMError(resolvedCode, message, { platform, cause: record.cause ?? raw });
   }
-  return new FCMError(code, fallbackMessage, { platform, cause: raw });
+  return new FCMError(resolvedCode, fallbackMessage, { platform, cause: raw });
 };
 
 // src/core/eventBuffer.ts
@@ -189,30 +204,120 @@ var EventBuffer = class {
 // src/core/eventTarget.ts
 var NOTIFICATION_EVENT = "notification";
 var TOKEN_REFRESH_EVENT = "tokenRefresh";
+var isPluginEvent = (type) => type === NOTIFICATION_EVENT || type === TOKEN_REFRESH_EVENT;
+var callListener = (listener, target, event) => {
+  if (typeof listener === "function") {
+    listener.call(target, event);
+    return;
+  }
+  listener.handleEvent(event);
+};
 var CountingEventTarget = class extends EventTarget {
   constructor() {
     super(...arguments);
     __publicField(this, "counts", /* @__PURE__ */ new Map());
+    __publicField(this, "registered", /* @__PURE__ */ new Map());
+    __publicField(this, "onSubscribe");
+  }
+  /**
+   * Called when a subscription *increases* the count of a plugin event type.
+   * The core uses it to replay buffered events to a listener that attached
+   * directly on the event target instead of through `onNotification()`.
+   */
+  setOnSubscribe(callback) {
+    this.onSubscribe = callback;
   }
   addEventListener(type, listener, options) {
-    super.addEventListener(type, listener, options);
-    if (type === NOTIFICATION_EVENT || type === TOKEN_REFRESH_EVENT) {
-      this.counts.set(type, (this.counts.get(type) ?? 0) + 1);
+    if (!isPluginEvent(type) || listener === null) {
+      super.addEventListener(type, listener, options);
+      return;
     }
+    const capture = typeof options === "boolean" ? options : options?.capture === true;
+    const once = typeof options === "object" && options !== null && options.once === true;
+    const signal = typeof options === "object" && options !== null ? options.signal : void 0;
+    if (signal?.aborted === true) {
+      return;
+    }
+    const entries = this.registered.get(type) ?? [];
+    if (entries.some((entry2) => entry2.listener === listener && entry2.capture === capture)) {
+      return;
+    }
+    const entry = {
+      listener,
+      registered: listener,
+      capture,
+      once,
+      controller: new AbortController()
+    };
+    if (once) {
+      entry.registered = (event) => {
+        this.detach(type, entry);
+        callListener(entry.listener, this, event);
+      };
+    }
+    entries.push(entry);
+    this.registered.set(type, entries);
+    if (signal !== void 0) {
+      signal.addEventListener(
+        "abort",
+        () => this.removeEventListener(type, listener, { capture }),
+        { once: true, signal: entry.controller.signal }
+      );
+    }
+    super.addEventListener(type, entry.registered, options);
+    this.adjust(type, 1);
   }
   removeEventListener(type, listener, options) {
     super.removeEventListener(type, listener, options);
-    if (type === NOTIFICATION_EVENT || type === TOKEN_REFRESH_EVENT) {
-      const next = (this.counts.get(type) ?? 0) - 1;
-      if (next > 0) {
-        this.counts.set(type, next);
-      } else {
-        this.counts.delete(type);
-      }
+    if (!isPluginEvent(type) || listener === null) {
+      return;
     }
+    const capture = typeof options === "boolean" ? options : options?.capture === true;
+    const entries = this.registered.get(type);
+    if (entries === void 0) {
+      return;
+    }
+    const entry = entries.find(
+      (candidate) => candidate.listener === listener && candidate.capture === capture
+    );
+    if (entry === void 0) {
+      return;
+    }
+    this.detach(type, entry);
+  }
+  /**
+   * Drops one registration from both the real listener list and the mirror.
+   * Idempotent: a second attempt for the same entry changes nothing, so the
+   * wrapper's own cleanup and an explicit `removeEventListener` cannot both
+   * decrement.
+   */
+  detach(type, entry) {
+    const entries = this.registered.get(type);
+    const index = entries?.indexOf(entry) ?? -1;
+    if (entries === void 0 || index < 0) {
+      return;
+    }
+    entry.controller.abort();
+    super.removeEventListener(type, entry.registered, { capture: entry.capture });
+    entries.splice(index, 1);
+    if (entries.length === 0) {
+      this.registered.delete(type);
+    }
+    this.adjust(type, -1);
   }
   subscriberCount(type) {
     return this.counts.get(type) ?? 0;
+  }
+  adjust(type, delta) {
+    const next = (this.counts.get(type) ?? 0) + delta;
+    if (next > 0) {
+      this.counts.set(type, next);
+    } else {
+      this.counts.delete(type);
+    }
+    if (delta > 0 && next > 0) {
+      this.onSubscribe?.(type);
+    }
   }
 };
 
@@ -318,9 +423,22 @@ var sanitizeNotificationPayload = (raw) => {
 // src/core/fcmCore.ts
 var DEFAULT_CALL_TIMEOUT_MS = 15e3;
 var TOKEN_BUFFER_SIZE = 1;
-var TOPIC_PATTERN = /^[A-Za-z~_.%][A-Za-z0-9_%.-]{0,254}$/;
+var TOPIC_PATTERN = /^[a-zA-Z0-9\-_.~%]{1,900}$/;
 var CHANNEL_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,200}$/;
 var isRecord2 = (value) => typeof value === "object" && value !== null && !Array.isArray(value);
+var toBoolean = (value) => {
+  if (typeof value === "boolean") {
+    return value;
+  }
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+  if (typeof value === "string") {
+    const normalised = value.trim().toLowerCase();
+    return normalised === "true" || normalised === "1";
+  }
+  return false;
+};
 var notifySafely = (listener, value, onError) => {
   try {
     listener.callback(value);
@@ -358,6 +476,9 @@ var FCMCore = class {
       foregroundPresentation: options.foregroundPresentation
     };
     this.eventTarget = new CountingEventTarget();
+    this.eventTarget.setOnSubscribe(
+      (type) => this.scheduleReplay(type === NOTIFICATION_EVENT ? "notification" : "tokenRefresh")
+    );
     this.platformId = bridge.platformId;
     this.notifications = new EventBuffer(
       this.options.eventBufferSize,
@@ -403,9 +524,31 @@ var FCMCore = class {
         }
       );
     }
-    this.bridgeTeardown = this.bridge.addEventListener((event) => this.handleNativeEvent(event));
+    let transportFailure;
+    const takeTransportFailure = () => {
+      const failure = transportFailure;
+      transportFailure = void 0;
+      return failure ?? null;
+    };
+    this.bridgeTeardown = this.bridge.addEventListener(
+      (event) => this.handleNativeEvent(event),
+      (error) => {
+        if (transportFailure === void 0) {
+          transportFailure = error;
+        }
+      }
+    );
     try {
+      await this.awaitEventRegistration();
+      const registrationFailure = takeTransportFailure();
+      if (registrationFailure !== null) {
+        throw registrationFailure;
+      }
       await this.callNative("ready");
+      const readyFailure = takeTransportFailure();
+      if (readyFailure !== null) {
+        throw readyFailure;
+      }
     } catch (error) {
       this.teardownBridge();
       if (isFCMError(error) && error.code === "timeout") {
@@ -606,8 +749,16 @@ var FCMCore = class {
         );
       }
     );
+    return this.withTimeout(call, `FCM native call "${action}"`);
+  }
+  /**
+   * Bounds a native promise by `callTimeoutMs`. The resulting error keeps the
+   * distinct `timeout` code: "the native side never answered" is a different
+   * diagnosis from "the bridge is offline" and must not be flattened.
+   */
+  withTimeout(work, label) {
     if (this.options.callTimeoutMs <= 0) {
-      return call;
+      return work;
     }
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -617,12 +768,12 @@ var FCMCore = class {
         }
         settled = true;
         reject(
-          new FCMError("timeout", `FCM native call "${action}" timed out`, {
+          new FCMError("timeout", `${label} timed out`, {
             platform: this.platformId
           })
         );
       }, this.options.callTimeoutMs);
-      call.then(
+      work.then(
         (value) => {
           if (settled) {
             return;
@@ -641,6 +792,18 @@ var FCMCore = class {
         }
       );
     });
+  }
+  /**
+   * Waits for an asynchronous native event registration (Capacitor) to settle
+   * before `ready`/`replayBufferedEvents` run. Bridges without asynchronous
+   * registration (Cordova's keep-alive callback) have nothing to wait for.
+   */
+  awaitEventRegistration() {
+    const registration = this.bridge.waitForEventRegistration?.();
+    if (registration === void 0) {
+      return Promise.resolve();
+    }
+    return this.withTimeout(registration, "FCM native event listener registration");
   }
   /** Awaits initialization first, so callers never race the handshake. */
   async invoke(action, args = []) {
@@ -692,13 +855,11 @@ var FCMCore = class {
     });
   }
   hasPermission() {
-    return this.invoke("hasPermission").then((value) => !!value);
+    return this.invoke("hasPermission").then(toBoolean);
   }
   requestPushPermission(options = {}) {
     const { ios9Support: _ignored, ...rest } = options;
-    return this.invoke("requestPushPermission", [rest]).then(
-      (value) => !!value
-    );
+    return this.invoke("requestPushPermission", [rest]).then(toBoolean);
   }
   subscribeToTopic(topic) {
     const invalid = this.topicError(topic);
@@ -716,6 +877,23 @@ var FCMCore = class {
   }
   clearAllNotifications() {
     return this.invoke("clearAllNotifications").then(() => void 0);
+  }
+  /**
+   * Turns Firebase's own auto-initialisation on or off. Explicit by design:
+   * the host app owns the consent decision, the plugin never guesses it.
+   */
+  setAutoInitEnabled(enabled) {
+    if (typeof enabled !== "boolean") {
+      return Promise.reject(
+        new FCMError("invalid_argument", "setAutoInitEnabled requires a boolean", {
+          platform: this.platformId
+        })
+      );
+    }
+    return this.invoke("setAutoInitEnabled", [enabled]).then(() => void 0);
+  }
+  isAutoInitEnabled() {
+    return this.invoke("isAutoInitEnabled").then(toBoolean);
   }
   createNotificationChannel(channelConfig) {
     if (this.platformId !== "android") {
@@ -793,6 +971,20 @@ var FCMCore = class {
   }
 };
 
+// src/core/instance.ts
+var SHARED_INSTANCE_KEY = /* @__PURE__ */ Symbol.for("cordova-plugin-fcm-modern.fcm.instance");
+var sharedFCM = (create) => {
+  const host2 = globalThis;
+  const existing = host2[SHARED_INSTANCE_KEY];
+  if (existing !== void 0) {
+    return existing;
+  }
+  const created = create();
+  host2[SHARED_INSTANCE_KEY] = created;
+  return created;
+};
+var sharedFCMKey = SHARED_INSTANCE_KEY;
+
 // src/core/runtime.ts
 var readHost = () => {
   const global = globalThis;
@@ -816,19 +1008,22 @@ var getCordovaHost = () => {
   return null;
 };
 var normalisePlatform = (value) => value === "android" || value === "ios" ? value : "unknown";
-var toEvent = (raw) => {
+var parseNativeEnvelope = (raw) => {
   if (!Array.isArray(raw) || raw.length < 2) {
-    return null;
+    return "malformed";
   }
-  const [name, data] = raw;
-  if (name === "notification" && typeof data === "object" && data !== null) {
-    return {
-      kind: "notification",
-      payload: data
-    };
+  const [name, value] = raw;
+  if (name === "notification") {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return "malformed";
+    }
+    return { kind: "notification", payload: value };
   }
-  if (name === "tokenRefresh" && typeof data === "string") {
-    return { kind: "tokenRefresh", token: data };
+  if (name === "tokenRefresh") {
+    if (typeof value !== "string") {
+      return "malformed";
+    }
+    return { kind: "tokenRefresh", token: value };
   }
   return null;
 };
@@ -893,6 +1088,9 @@ var CordovaBridge = class _CordovaBridge {
     }
     this.attached = true;
     let active = true;
+    const report = (code, message, cause) => {
+      onTransportError?.(new FCMError(code, message, { platform: this.platformId, cause }));
+    };
     const onRaw = (data) => {
       if (!active) {
         return;
@@ -904,15 +1102,14 @@ var CordovaBridge = class _CordovaBridge {
       try {
         parsed = JSON.parse(data);
       } catch (error) {
-        onTransportError?.(
-          new FCMError("native_error", "Malformed native event payload", {
-            platform: this.platformId,
-            cause: error
-          })
-        );
+        report("native_error", "Malformed native event payload", error);
         return;
       }
-      const event = toEvent(parsed);
+      const event = parseNativeEnvelope(parsed);
+      if (event === "malformed") {
+        report("native_error", "Native event does not match [eventName, value]");
+        return;
+      }
       if (event !== null) {
         listener(event);
       }
@@ -965,7 +1162,7 @@ var CordovaBridge = class _CordovaBridge {
 
 // src/cordova/index.ts
 var createFCM = (options = {}) => new FCMCore(CordovaBridge.create(), options);
-var FCM = createFCM();
+var FCM = sharedFCM(() => new FCMCore(CordovaBridge.create()));
 var host = globalThis;
 if (typeof host.window === "object" && host.window !== null && getCordovaHost() !== null) {
   host.window.FCM = FCM;

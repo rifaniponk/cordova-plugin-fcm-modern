@@ -8,6 +8,13 @@ export declare const BRIDGE_SERVICE = "FCMPlugin";
 /** Reads `window.cordova` lazily so importing this module never needs a DOM. */
 export declare const getCordovaHost: () => CordovaExecHost | null;
 /**
+ * Cordova's keep-alive callback delivers one JSON string per event, shaped
+ * `[eventName, value]`. A structurally broken envelope is a transport defect and
+ * gets reported; an unknown event name is not, because a newer native core may
+ * add events and failing the bridge over one would drop everything else.
+ */
+export declare const parseNativeEnvelope: (raw: unknown) => NativeEvent | null | "malformed";
+/**
  * Cordova transport: `cordova.exec` promises + one long-lived keep-alive callback
  * for native-originated events.
  */

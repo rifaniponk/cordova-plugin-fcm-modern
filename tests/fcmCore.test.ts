@@ -12,6 +12,7 @@ class FakeBridge implements IPluginBridge {
     public listeners: Array<(event: NativeEvent) => void> = []
     public transportErrors: Array<{ message: string }> = []
     public readyBehaviour: 'ok' | 'fail' | 'hang' = 'ok'
+    public attachFailure?: string
     public readonly platformId: PlatformId
     private failTransport?: (error: FCMError) => void
 
@@ -57,7 +58,16 @@ class FakeBridge implements IPluginBridge {
         onError?: (error: FCMError) => void
     ): () => void {
         this.listeners.push(listener)
-        this.failTransport = onError
+        const report = (error: FCMError): void => {
+            this.transportErrors.push(error)
+            onError?.(error)
+        }
+        this.failTransport = report
+        if (this.attachFailure !== undefined) {
+            // Cordova reports a rejected keep-alive bridge synchronously, before
+            // the handshake gets as far as `ready`.
+            report(new FCMError('bridge_unavailable', this.attachFailure))
+        }
         return () => {
             const index = this.listeners.indexOf(listener)
             if (index >= 0) {
@@ -310,7 +320,7 @@ test('topics, channels and permissions are validated before any native call', as
     const bridge = new FakeBridge()
     const core = readyCore(bridge)
 
-    for (const bad of ['', ' ', 'has space', 'a'.repeat(256), '../etc', 'topic/x y']) {
+    for (const bad of ['', ' ', 'has space', 'a'.repeat(901), '../etc', 'topic/x y']) {
         await assert.rejects(core.subscribeToTopic(bad), (error: FCMError) => {
             assert.equal(error.code, 'invalid_argument')
             return true
@@ -357,6 +367,86 @@ test('valid topics and channels reach the bridge', async () => {
         ]
     )
     assert.deepEqual(bridge.calls[2]?.args, ['orders.updates'])
+    core.dispose()
+})
+
+test('topics that start with a digit are valid Firebase topic names', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    for (const topic of ['9lives', '0', '2024.updates', '~tilde', 'pct%20', 'da-sh', '_under']) {
+        await core.subscribeToTopic(topic)
+    }
+    const subscribed = bridge.calls.filter((call) => call.action === 'subscribeToTopic')
+    assert.deepEqual(
+        subscribed.map((call) => call.args[0]),
+        ['9lives', '0', '2024.updates', '~tilde', 'pct%20', 'da-sh', '_under']
+    )
+    // The documented ASCII set stops at 900 characters.
+    await core.subscribeToTopic('9'.repeat(900))
+    assert.equal(bridge.calls.filter((call) => call.action === 'subscribeToTopic').length, 8)
+    core.dispose()
+})
+
+test('auto-init is an explicit native operation in both directions', async () => {
+    const bridge = new FakeBridge()
+    bridge.respond('isAutoInitEnabled', () => false)
+    const core = readyCore(bridge)
+
+    await core.setAutoInitEnabled(false)
+    assert.equal(await core.isAutoInitEnabled(), false)
+    await core.setAutoInitEnabled(true)
+    bridge.respond('isAutoInitEnabled', () => true)
+    assert.equal(await core.isAutoInitEnabled(), true)
+
+    const autoInit = bridge.calls.filter((call) => call.action === 'setAutoInitEnabled')
+    assert.deepEqual(
+        autoInit.map((call) => call.args[0]),
+        [false, true]
+    )
+
+    await assert.rejects(
+        core.setAutoInitEnabled('yes' as never),
+        (error: FCMError) => error.code === 'invalid_argument'
+    )
+    assert.equal(
+        bridge.calls.filter((call) => call.action === 'setAutoInitEnabled').length,
+        2,
+        'a non-boolean must never reach the native side'
+    )
+    core.dispose()
+})
+
+test('a numeric native answer is still read as a boolean', async () => {
+    const bridge = new FakeBridge()
+    bridge.respond('hasPermission', () => 0)
+    assert.equal(await readyCore(bridge).hasPermission(), false)
+    bridge.respond('hasPermission', () => 1)
+    assert.equal(await readyCore(bridge).hasPermission(), true)
+    bridge.respond('hasPermission', () => 'false')
+    assert.equal(
+        await readyCore(bridge).hasPermission(),
+        false,
+        'the string "false" must not become truthy'
+    )
+})
+
+test('a listener attached directly on the event target also gets replay', async () => {
+    const bridge = new FakeBridge()
+    const core = readyCore(bridge)
+    await core.initialize()
+
+    bridge.emit({ kind: 'notification', payload: { wasTapped: false, messageId: 'pre-1' } })
+    bridge.emit({ kind: 'tokenRefresh', token: 'pre-token' })
+
+    const seen: string[] = []
+    core.eventTarget.addEventListener('notification', (event) => {
+        seen.push(`notification:${(event as CustomEvent).detail.messageId}`)
+    })
+    core.eventTarget.addEventListener('tokenRefresh', (event) => {
+        seen.push(`tokenRefresh:${(event as CustomEvent).detail}`)
+    })
+    await tick()
+    assert.deepEqual(seen, ['notification:pre-1', 'tokenRefresh:pre-token'])
     core.dispose()
 })
 
@@ -473,5 +563,60 @@ test('transport failures are surfaced, not swallowed', async () => {
     const core = readyCore(bridge)
     await core.initialize()
     bridge.breakTransport('event pipe broken')
+    assert.deepEqual(
+        bridge.transportErrors.map((error) => error.message),
+        ['event pipe broken'],
+        'the core must hand the bridge a transport-error sink'
+    )
+    core.dispose()
+})
+
+test('a dead event stream fails initialization even when every call answers', async () => {
+    const bridge = new FakeBridge()
+    bridge.attachFailure = 'startJsEventBridge rejected'
+    const core = readyCore(bridge)
+
+    await assert.rejects(core.initialize(), (error: FCMError) => {
+        assert.equal(error.code, 'bridge_unavailable')
+        assert.match(error.message, /startJsEventBridge rejected/)
+        return true
+    })
+    assert.deepEqual(
+        bridge.calls.map((call) => call.action),
+        [],
+        'ready must not be asked once the event stream is known to be dead'
+    )
+    assert.equal(bridge.listeners.length, 0, 'the dead sink is torn down')
+
+    // The next attempt starts from scratch instead of inheriting the rejection.
+    bridge.attachFailure = undefined
+    await core.initialize()
+    assert.equal(bridge.listeners.length, 1, 'the retry re-attaches a sink')
+
+    const seen: string[] = []
+    core.onNotification((payload) => seen.push(String(payload.messageId)))
+    bridge.emit({ kind: 'notification', payload: { wasTapped: false, messageId: 'live' } })
+    assert.deepEqual(seen, ['live'], 'a retried handshake delivers live events again')
+    core.dispose()
+})
+
+test('an event stream that dies after ready still fails the same handshake', async () => {
+    const bridge = new FakeBridge()
+    bridge.respond('ready', () => {
+        bridge.breakTransport('event pipe died during handshake')
+        return undefined
+    })
+    const core = readyCore(bridge)
+
+    await assert.rejects(core.initialize(), (error: FCMError) => {
+        assert.equal(error.code, 'bridge_unavailable')
+        assert.match(error.message, /event pipe died during handshake/)
+        return true
+    })
+    assert.deepEqual(
+        bridge.calls.map((call) => call.action),
+        ['ready'],
+        'replay is never requested for a handshake with no working sink'
+    )
     core.dispose()
 })

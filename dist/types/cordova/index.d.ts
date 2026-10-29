@@ -9,5 +9,10 @@ export * from '../core/index.js';
  * so `window.FCM` and the imported instance are the same object.
  */
 export declare const createFCM: (options?: IFCMOptions) => FCMCore;
+/**
+ * The shared instance: if the app already imported the package root (or another
+ * entrypoint), this is that same FCMCore, not a second one with a second native
+ * event sink.
+ */
 export declare const FCM: FCMCore;
 export default FCM;

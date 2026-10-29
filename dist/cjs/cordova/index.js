@@ -28,12 +28,13 @@ __export(cordova_exports, {
 });
 module.exports = __toCommonJS(cordova_exports);
 var import_fcmCore = require("../core/fcmCore.js");
+var import_instance = require("../core/instance.js");
 var import_cordovaBridge = require("../bridges/cordovaBridge.js");
 var import_cordovaBridge2 = require("../bridges/cordovaBridge.js");
 var import_fcmCore2 = require("../core/fcmCore.js");
 __reExport(cordova_exports, require("../core/index.js"), module.exports);
 const createFCM = (options = {}) => new import_fcmCore.FCMCore(import_cordovaBridge.CordovaBridge.create(), options);
-const FCM = createFCM();
+const FCM = (0, import_instance.sharedFCM)(() => new import_fcmCore.FCMCore(import_cordovaBridge.CordovaBridge.create()));
 const host = globalThis;
 if (typeof host.window === "object" && host.window !== null && (0, import_cordovaBridge.getCordovaHost)() !== null) {
   host.window.FCM = FCM;
