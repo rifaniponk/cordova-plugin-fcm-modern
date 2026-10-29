@@ -14,6 +14,14 @@ export declare class FCMCore {
     private readonly options;
     private initPromise;
     private bridgeTeardown;
+    /**
+     * Bumped whenever the event stream is re-attached. A transport error callback
+     * captured by an older generation can still arrive after its teardown ran;
+     * the generation lets recovery ignore those stale callbacks instead of
+     * tearing down the newer bridge.
+     */
+    private bridgeGeneration;
+    private readonly attempts;
     private initialPayloadCache;
     private disposed;
     private readonly bridge;
@@ -25,6 +33,27 @@ export declare class FCMCore {
     /** Starts (or reuses) the native handshake. Safe to call repeatedly. */
     initialize(): Promise<void>;
     ready(): Promise<void>;
+    /**
+     * The event stream can die after the handshake settled (Cordova's keep-alive
+     * error callback arrives whenever native drops the sink). `initPromise` is a
+     * settled memo, so without recovery every later `ready`/`getToken` reports
+     * success while there is no notification sink at all.
+     *
+     * Which of two shapes applies depends on whether the failing attempt has
+     * already settled. While a handshake is still in flight the failure is
+     * recorded for *that* attempt and fails its own promise (native answering
+     * `ready` must not mask a dead sink); once it has settled there is no promise
+     * left to fail, so recovery detaches, retires the memo and reattaches.
+     */
+    private handleStreamFailure;
+    /** Detaches the stream of `generation` unless a newer attempt already owns it. */
+    private retireAttempt;
+    /**
+     * The handshake proper. Kept separate from `initialize()` so the attempt's
+     * bookkeeping — registering it, then marking it settled at its real
+     * completion boundary — lives in one place.
+     */
+    private performHandshake;
     private runInitialization;
     private teardownBridge;
     /** Releases the bridge and all listeners. Idempotent. */

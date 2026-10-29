@@ -459,6 +459,14 @@ var FCMCore = class {
     __publicField(this, "options");
     __publicField(this, "initPromise", null);
     __publicField(this, "bridgeTeardown", null);
+    /**
+     * Bumped whenever the event stream is re-attached. A transport error callback
+     * captured by an older generation can still arrive after its teardown ran;
+     * the generation lets recovery ignore those stale callbacks instead of
+     * tearing down the newer bridge.
+     */
+    __publicField(this, "bridgeGeneration", 0);
+    __publicField(this, "attempts", /* @__PURE__ */ new Map());
     __publicField(this, "initialPayloadCache");
     __publicField(this, "disposed", false);
     __publicField(this, "bridge");
@@ -502,41 +510,86 @@ var FCMCore = class {
     if (this.initPromise !== null) {
       return this.initPromise;
     }
-    const pending = this.runInitialization().catch((error) => {
+    const generation = this.bridgeGeneration + 1;
+    const handshake = this.runInitialization();
+    if (handshake === null) {
+      return Promise.reject(
+        new FCMError("not_initialized", "This FCM instance has been disposed")
+      );
+    }
+    const pending = handshake.catch((error) => {
       if (this.initPromise === pending) {
         this.initPromise = null;
       }
       throw error;
     });
     this.initPromise = pending;
+    const attempt = this.attempts.get(generation);
+    if (attempt !== void 0) {
+      attempt.promise = pending;
+    }
     return pending;
   }
   ready() {
     return this.initialize();
   }
-  async runInitialization() {
-    if (this.bridge.runtime === "web") {
-      throw new FCMError(
-        "unsupported_platform",
-        "This build has no browser push implementation",
-        {
-          platform: this.bridge.platformId
-        }
-      );
+  /**
+   * The event stream can die after the handshake settled (Cordova's keep-alive
+   * error callback arrives whenever native drops the sink). `initPromise` is a
+   * settled memo, so without recovery every later `ready`/`getToken` reports
+   * success while there is no notification sink at all.
+   *
+   * Which of two shapes applies depends on whether the failing attempt has
+   * already settled. While a handshake is still in flight the failure is
+   * recorded for *that* attempt and fails its own promise (native answering
+   * `ready` must not mask a dead sink); once it has settled there is no promise
+   * left to fail, so recovery detaches, retires the memo and reattaches.
+   */
+  handleStreamFailure(error, generation) {
+    if (this.disposed || generation !== this.bridgeGeneration) {
+      return;
     }
-    let transportFailure;
+    const failedAttempt = this.attempts.get(generation);
+    if (failedAttempt === void 0) {
+      return;
+    }
+    if (!failedAttempt.settled) {
+      failedAttempt.transportFailure ?? (failedAttempt.transportFailure = error);
+      return;
+    }
+    this.retireAttempt(generation);
+    if (this.initPromise === failedAttempt.promise) {
+      this.initPromise = null;
+    }
+    void this.initialize().catch(() => void 0);
+  }
+  /** Detaches the stream of `generation` unless a newer attempt already owns it. */
+  retireAttempt(generation) {
+    this.attempts.delete(generation);
+    if (generation !== this.bridgeGeneration) {
+      return;
+    }
+    this.teardownBridge();
+    this.bridgeGeneration++;
+  }
+  /**
+   * The handshake proper. Kept separate from `initialize()` so the attempt's
+   * bookkeeping — registering it, then marking it settled at its real
+   * completion boundary — lives in one place.
+   */
+  async performHandshake(attempt, generation) {
     const takeTransportFailure = () => {
-      const failure = transportFailure;
-      transportFailure = void 0;
+      const failure = attempt.transportFailure;
+      attempt.transportFailure = void 0;
       return failure ?? null;
     };
     this.bridgeTeardown = this.bridge.addEventListener(
-      (event) => this.handleNativeEvent(event),
-      (error) => {
-        if (transportFailure === void 0) {
-          transportFailure = error;
+      (event) => {
+        if (generation === this.bridgeGeneration) {
+          this.handleNativeEvent(event);
         }
-      }
+      },
+      (error) => this.handleStreamFailure(error, generation)
     );
     try {
       await this.awaitEventRegistration();
@@ -550,7 +603,7 @@ var FCMCore = class {
         throw readyFailure;
       }
     } catch (error) {
-      this.teardownBridge();
+      this.retireAttempt(generation);
       if (isFCMError(error) && error.code === "timeout") {
         throw error;
       }
@@ -576,6 +629,39 @@ var FCMCore = class {
     }
     await this.callNative("replayBufferedEvents");
   }
+  runInitialization() {
+    if (this.disposed) {
+      return null;
+    }
+    if (this.bridge.runtime === "web") {
+      return Promise.reject(
+        new FCMError(
+          "unsupported_platform",
+          "This build has no browser push implementation",
+          {
+            platform: this.bridge.platformId
+          }
+        )
+      );
+    }
+    const generation = ++this.bridgeGeneration;
+    const attempt = { settled: false };
+    this.attempts.set(generation, attempt);
+    const settled = this.performHandshake(attempt, generation).then(
+      () => {
+        attempt.settled = true;
+        const late = attempt.transportFailure;
+        if (late !== void 0 && this.attempts.get(generation) === attempt) {
+          attempt.transportFailure = void 0;
+          this.handleStreamFailure(late, generation);
+        }
+      },
+      (error) => {
+        throw error;
+      }
+    );
+    return settled.then(() => void 0);
+  }
   teardownBridge() {
     if (this.bridgeTeardown !== null) {
       try {
@@ -592,6 +678,8 @@ var FCMCore = class {
     }
     this.disposed = true;
     this.teardownBridge();
+    this.bridgeGeneration++;
+    this.attempts.clear();
     this.notificationListeners.length = 0;
     this.tokenListeners.length = 0;
     this.notifications.drain();
