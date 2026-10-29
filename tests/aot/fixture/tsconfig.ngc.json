@@ -1,0 +1,24 @@
+{
+    "compilerOptions": {
+        "target": "ES2022",
+        "lib": ["ES2022", "DOM"],
+        "module": "ESNext",
+        "moduleResolution": "bundler",
+        "strict": true,
+        "skipLibCheck": true,
+        "experimentalDecorators": true,
+        "types": [],
+        "rootDir": ".",
+        "outDir": "../../../.tmp/aot/out",
+        "paths": {
+            "cordova-plugin-fcm-modern/ionic/ngx": ["../../../dist/types/ionic/ngx/index.d.ts"]
+        }
+    },
+    "files": ["consumer.component.ts"],
+    "angularCompilerOptions": {
+        "compilationMode": "full",
+        "strictTemplates": true,
+        "strictInjectionParameters": true,
+        "enableI18nLegacyMessageIdFormat": false
+    }
+}

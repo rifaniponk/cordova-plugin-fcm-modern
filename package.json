@@ -62,8 +62,9 @@
         "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\" \"tests/**/*.ts\"",
         "test": "node scripts/test.mjs",
         "test:unit": "node --disable-warning=ExperimentalWarning --import ./scripts/ts-js-hook.mjs --test tests/*.test.ts",
+        "test:aot": "node scripts/ngc-fixture.mjs",
         "audit": "npm audit --audit-level=low",
-        "verify": "npm run format:check && npm run typecheck && npm run build && npm run test && npm run audit"
+        "verify": "npm run format:check && npm run typecheck && npm run build && npm run test && npm run test:aot && npm run audit"
     },
     "files": [
         "dist",
@@ -117,6 +118,7 @@
     },
     "devDependencies": {
         "@angular/compiler": "22.2.3",
+        "@angular/compiler-cli": "22.2.3",
         "@angular/core": "22.2.3",
         "@capacitor/core": "8.5.3",
         "@types/node": "26.6.5",
