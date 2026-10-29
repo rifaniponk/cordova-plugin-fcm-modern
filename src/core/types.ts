@@ -3,6 +3,8 @@
  * Names keep the legacy 7.x spelling where the API name is preserved.
  */
 
+import type { FCMError } from './errors.js'
+
 export type PlatformId = 'android' | 'ios' | 'web' | 'unknown'
 export type RuntimeId = 'cordova' | 'capacitor' | 'web'
 
@@ -108,8 +110,15 @@ export interface IPluginBridge {
     readonly platformId: PlatformId
     /** Invoke a native action; rejections carry an FCMError-shaped cause. */
     call<T = unknown>(action: string, args?: readonly unknown[]): Promise<T>
-    /** Attach a native event listener; returns the teardown function. */
-    addEventListener(listener: (event: NativeEvent) => void): () => void
+    /**
+     * Attach a native event listener; returns the teardown function.
+     * `onTransportError` reports transport-level failures (the event bridge
+     * died), which is distinct from a bad payload.
+     */
+    addEventListener(
+        listener: (event: NativeEvent) => void,
+        onTransportError?: (error: FCMError) => void
+    ): () => void
 }
 
 export interface IFCMOptions {

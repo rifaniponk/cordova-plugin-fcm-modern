@@ -11,8 +11,9 @@ const run = (label, args) => {
     const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit' })
     if (result.status !== 0) {
         console.error(`[test] FAILED: ${label}`)
-        process.exit(result.status ?? 1)
+        return false
     }
+    return true
 }
 
 const suites = readdirSync(testsDir)
@@ -26,11 +27,31 @@ if (suites.length === 0) {
 }
 
 // Unit tests run TypeScript sources directly: Node >= 22.18 strips types natively,
-// so there is no separate test build that could drift from the sources.
-run(`unit (${suites.length} suites)`, [
-    '--disable-warning=ExperimentalWarning',
-    '--test',
-    ...suites
-])
+// so there is no separate test build that could drift from the sources. The hook
+// teaches that loader the `.js` → `.ts` remap the emit step performs.
+//
+// One process per suite: `--test` with several files reports only the file-level
+// failure, which hides the failing subtest name and assertion. Running a suite on
+// its own makes node:test print every subtest and the full diff of each failure.
+const failed = []
+for (const suite of suites) {
+    const ok = run(`unit ${suite.replace(`${root}/`, '')}`, [
+        '--disable-warning=ExperimentalWarning',
+        '--import',
+        './scripts/ts-js-hook.mjs',
+        suite
+    ])
+    if (!ok) {
+        failed.push(suite)
+    }
+}
 
-console.log('[test] ok')
+if (failed.length > 0) {
+    console.error(`[test] ${failed.length}/${suites.length} suites failed:`)
+    for (const suite of failed) {
+        console.error(`  - ${suite.replace(`${root}/`, '')}`)
+    }
+    process.exit(1)
+}
+
+console.log(`[test] ok — ${suites.length} suites`)

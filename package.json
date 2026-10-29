@@ -61,7 +61,7 @@
         "format": "prettier --write \"src/**/*.ts\" \"scripts/**/*.mjs\" \"tests/**/*.ts\"",
         "format:check": "prettier --check \"src/**/*.ts\" \"scripts/**/*.mjs\" \"tests/**/*.ts\"",
         "test": "node scripts/test.mjs",
-        "test:unit": "node --disable-warning=ExperimentalWarning --test tests/*.test.ts",
+        "test:unit": "node --disable-warning=ExperimentalWarning --import ./scripts/ts-js-hook.mjs --test tests/*.test.ts",
         "audit": "npm audit --audit-level=low",
         "verify": "npm run format:check && npm run typecheck && npm run build && npm run test && npm run audit"
     },

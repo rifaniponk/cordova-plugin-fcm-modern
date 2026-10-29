@@ -8,6 +8,7 @@
         "noUncheckedIndexedAccess": true,
         "verbatimModuleSyntax": true,
         "isolatedModules": true,
+        "erasableSyntaxOnly": true,
         "forceConsistentCasingInFileNames": true,
         "skipLibCheck": true,
         "types": []
