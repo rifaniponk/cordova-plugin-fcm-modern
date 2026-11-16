@@ -43,15 +43,13 @@
 		<preference name="ANDROID_GOOGLE_SERVICES_VERSION" default="4.5.0" />
 		<preference name="ANDROID_GRADLE_TOOLS_VERSION" default="8.1.0" />
 
+		<!-- The tap activity is internal: no intent-filter and exported=false
+		     mean third-party apps cannot forge tap events via an exported
+		     activity. The service is the only exported-by-Firebase component. -->
 		<config-file target="AndroidManifest.xml" parent="/manifest/application">
-			<activity android:name="com.gae.scaffolder.plugin.FCMPluginActivity" android:exported="true" android:launchMode="singleTop">
-				<intent-filter>
-					<action android:name="FCM_PLUGIN_ACTIVITY" />
-					<category android:name="android.intent.category.DEFAULT" />
-				</intent-filter>
-			</activity>
+			<activity android:name="dev.rifan.fcmmodern.service.FCMModernTapActivity" android:exported="false" android:launchMode="singleTop" />
 			<service
-				android:name="com.gae.scaffolder.plugin.MyFirebaseMessagingService"
+				android:name="dev.rifan.fcmmodern.service.FCMModernMessagingService"
 				android:exported="false"
 				android:stopWithTask="false">
 				<intent-filter>
@@ -62,7 +60,7 @@
 		</config-file>
 		<config-file target="res/xml/config.xml" parent="/*">
 			<feature name="FCMPlugin">
-				<param name="android-package" value="com.gae.scaffolder.plugin.FCMPlugin"/>
+				<param name="android-package" value="dev.rifan.fcmmodern.cordova.FCMModernCordovaPlugin"/>
 				<param name="onload" value="true" />
 			</feature>
 		</config-file>
@@ -73,12 +71,16 @@
 		</config-file>
 		<framework src="src/android/FCMPlugin.gradle" custom="true" type="gradleReference"/>
 
-		<source-file src="src/android/com/gae/scaffolder/plugin/FCMPlugin.java" target-dir="src/com/gae/scaffolder/plugin" />
-		<source-file src="src/android/com/gae/scaffolder/plugin/FCMPluginChannelCreator.java" target-dir="src/com/gae/scaffolder/plugin" />
-		<source-file src="src/android/com/gae/scaffolder/plugin/MyFirebaseMessagingService.java" target-dir="src/com/gae/scaffolder/plugin" />
-		<source-file src="src/android/com/gae/scaffolder/plugin/FCMPluginActivity.java" target-dir="src/com/gae/scaffolder/plugin" />
-		<source-file src="src/android/com/gae/scaffolder/plugin/interfaces/OnFinishedListener.java" target-dir="src/com/gae/scaffolder/plugin/interfaces" />
-		<source-file src="src/android/com/gae/scaffolder/plugin/interfaces/TokenListeners.java" target-dir="src/com/gae/scaffolder/plugin/interfaces" />
+		<!-- Shared core + service (Cordova route excludes the Capacitor adapter;
+		     Capacitor consumers apply fcm-modern-capacitor.gradle instead). -->
+		<source-file src="src/android/dev/rifan/fcmmodern/core/FcmEventBus.java" target-dir="src/dev/rifan/fcmmodern/core" />
+		<source-file src="src/android/dev/rifan/fcmmodern/core/FCMPayload.java" target-dir="src/dev/rifan/fcmmodern/core" />
+		<source-file src="src/android/dev/rifan/fcmmodern/core/FCMModernCore.java" target-dir="src/dev/rifan/fcmmodern/core" />
+		<source-file src="src/android/dev/rifan/fcmmodern/android/AndroidFirebaseGateway.java" target-dir="src/dev/rifan/fcmmodern/android" />
+		<source-file src="src/android/dev/rifan/fcmmodern/service/FCMModernHolder.java" target-dir="src/dev/rifan/fcmmodern/service" />
+		<source-file src="src/android/dev/rifan/fcmmodern/service/FCMModernMessagingService.java" target-dir="src/dev/rifan/fcmmodern/service" />
+		<source-file src="src/android/dev/rifan/fcmmodern/service/FCMModernTapActivity.java" target-dir="src/dev/rifan/fcmmodern/service" />
+		<source-file src="src/android/dev/rifan/fcmmodern/cordova/FCMModernCordovaPlugin.java" target-dir="src/dev/rifan/fcmmodern/cordova" />
 	</platform>
 
 	<!-- IOS CONFIGURATION -->

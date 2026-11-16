@@ -62,6 +62,41 @@ test('no legacy package identity or missing assets are declared', () => {
     assert.ok(!pluginXml.includes('GoogleService-Info.plist'), 'credentials are never shipped')
 })
 
+test('Android wiring points at the shared modern sources', () => {
+    assert.match(
+        pluginXml,
+        /<param name="android-package" value="dev\.rifan\.fcmmodern\.cordova\.FCMModernCordovaPlugin"\/>/
+    )
+    assert.match(
+        pluginXml,
+        /android:name="dev\.rifan\.fcmmodern\.service\.FCMModernMessagingService"/
+    )
+    assert.ok(!pluginXml.includes('FCM_PLUGIN_ACTIVITY'), 'the legacy exported trampoline is gone')
+    assert.ok(
+        !pluginXml.includes('com.gae.scaffolder.plugin'),
+        'legacy Android classes are not installed'
+    )
+    assert.match(
+        pluginXml,
+        /FCMModernTapActivity" android:exported="false"/,
+        'tap activity stays internal'
+    )
+})
+
+test('the Capacitor gradle include ships without the Cordova adapter', () => {
+    assert.ok(exists('src/android/fcm-modern-capacitor.gradle'))
+    const capacitorGradle = readFileSync(
+        fileURLToPath(new URL('../src/android/fcm-modern-capacitor.gradle', import.meta.url)),
+        'utf8'
+    )
+    assert.ok(capacitorGradle.includes('core'), 'core directory is whitelisted')
+    assert.ok(capacitorGradle.includes('capacitor'), 'capacitor adapter is whitelisted')
+    assert.ok(
+        !capacitorGradle.includes('"$fcmModernDev/cordova"'),
+        'Cordova adapter stays out of Capacitor builds'
+    )
+})
+
 test('the CocoaPods route matches the rewritten package', () => {
     assert.ok(exists('fcm-modern.podspec'))
     assert.ok(!exists('cordova-plugin-fcm-with-dependecy-updated.podspec'))

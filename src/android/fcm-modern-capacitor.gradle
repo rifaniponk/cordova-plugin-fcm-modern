@@ -1,0 +1,34 @@
+// Capacitor consumer include for cordova-plugin-fcm-modern.
+// Add to the app module's android/build.gradle:
+//   apply from: "../../../node_modules/cordova-plugin-fcm-modern/src/android/fcm-modern-capacitor.gradle"
+// The Cordova adapter is deliberately excluded: only the whitelisted source
+// directories below enter the build. Capacitor discovers @CapacitorPlugin
+// classes automatically, so nothing is manually registered and no second
+// messaging service is installed.
+def fcmModernDev = file("$projectDir/../dev/rifan/fcmmodern")
+
+repositories {
+    mavenCentral()
+    google()
+}
+
+dependencies {
+    implementation platform("com.google.firebase:firebase-bom:${project.hasProperty('ANDROID_FIREBASE_BOM_VERSION') ? project.ANDROID_FIREBASE_BOM_VERSION : '35.1.0'}")
+    implementation 'com.google.firebase:firebase-messaging'
+    implementation 'androidx.core:core:1.13.1'
+    // Artifact coordinates are verified by fixtures/android-compile (Agent B).
+    implementation 'com.capacitorjs:core:8.5.0'
+}
+
+android {
+    sourceSets {
+        main {
+            java.srcDirs += [
+                "$fcmModernDev/core",
+                "$fcmModernDev/android",
+                "$fcmModernDev/service",
+                "$fcmModernDev/capacitor"
+            ]
+        }
+    }
+}
