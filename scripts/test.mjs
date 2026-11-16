@@ -6,6 +6,16 @@ import { fileURLToPath } from 'node:url'
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const testsDir = join(root, 'tests')
 
+// Native type-stripping is the test runner's only compile step (see package
+//.json engines). On older Node the suites would fail with a misleading
+// ERR_UNKNOWN_FILE_EXTENSION, so fail here with the actual requirement.
+if (Number(process.versions.node.split('.')[0]) < 24) {
+    console.error(
+        `[test] FAILED — requires Node >= 24 (package.json engines), running ${process.version}`
+    )
+    process.exit(1)
+}
+
 const run = (label, args) => {
     console.log(`[test] ${label}`)
     const result = spawnSync(process.execPath, args, { cwd: root, stdio: 'inherit' })

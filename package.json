@@ -63,8 +63,9 @@
         "test": "node scripts/test.mjs",
         "test:unit": "node --disable-warning=ExperimentalWarning --import ./scripts/ts-js-hook.mjs --test tests/*.test.ts",
         "test:aot": "node scripts/ngc-fixture.mjs",
+        "test:native": "node scripts/native-jvm.mjs",
         "audit": "npm audit --audit-level=low",
-        "verify": "npm run format:check && npm run typecheck && npm run build && npm run test && npm run test:aot && npm run audit"
+        "verify": "npm run format:check && npm run typecheck && npm run build && npm run test && npm run test:aot && npm run test:native && npm run audit"
     },
     "files": [
         "dist",
