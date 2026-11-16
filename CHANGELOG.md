@@ -1,5 +1,37 @@
 # Changelog
 
+## Version 8
+
+### Version 8.0.0 (unreleased)
+
+Full rewrite. Public method names and payload shape stay compatible; see
+docs/MIGRATION.md for behavior changes.
+
+- One runtime-agnostic native core per OS (Android Java, iOS Objective-C)
+  shared by Cordova and Capacitor adapters; no duplicated core, no second
+  messaging service, no manual plugin registration.
+- Foreground delivery is event-only by default; presentation is opt-in via
+  `configureForegroundPresentation()`. Permission prompts are explicit
+  (`POST_NOTIFICATIONS` on Android 13+); topics never auto-subscribe.
+- `deleteInstanceId()` is a compatibility alias for deleting the messaging
+  token only; it never removes the Firebase installation.
+- Native event bus queues cold-start receipts, taps and token updates before
+  any JS bridge exists; receipt and tap of one message id are distinct events;
+  id-less messages never collapse; queues and dedup sets are bounded.
+- Payloads are sanitized identically on both OSes: trusted fields win,
+  colliding keys move to `custom.<key>` with `_fcm.collisions`, prototype
+  keys (`__proto__`, `constructor`, `prototype`) are dropped and named in
+  `_fcm.dropped`. `getInitialPushPayload()` returns only the startup tap.
+- Removed: exported `FCM_PLUGIN_ACTIVITY` trampoline (tap PendingIntent is
+  immutable, explicit and non-exported), iOS 9 shims, AppDelegate takeover,
+  automatic `all`/`android`/`ios` topic subscriptions, Firebase Analytics,
+  install-time hooks and the legacy nested toolchain.
+- `ios9Support` is accepted and ignored. npm root and all subpaths import
+  safely in Node/SSR; unsupported native calls reject with useful errors.
+- Validation status is recorded in docs/VALIDATION.md: JS gate, JVM core
+  harness and Android source compilation pass locally; AGP builds, iOS
+  builds and device delivery are pending or CI-configured only.
+
 ## Version 7
 
 ### Version 7.8.0 (03/02/2020)
