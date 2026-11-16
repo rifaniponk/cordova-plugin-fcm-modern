@@ -17,29 +17,31 @@
   specific language governing permissions and limitations
   under the License.
 -->
-<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-fcm-with-dependecy-updated" version="7.8.0">
-	<name>Cordova FCM Push Plugin</name>
-	<description>Google Firebase Cloud Messaging Cordova Push Plugin fork with dependecy updated</description>
+<plugin xmlns="http://apache.org/cordova/ns/plugins/1.0" id="cordova-plugin-fcm-modern" version="8.0.0">
+	<name>FCM Modern</name>
+	<description>Firebase Cloud Messaging for Cordova and Capacitor (Android + iOS), event-only foreground delivery, no install-time hooks.</description>
 	<license>MIT</license>
-	<keywords>notifications, push, firebase, fcm, ios, android, cordova, plugin</keywords>
+	<keywords>ecosystem:cordova, notifications, push, firebase, fcm, ios, android, cordova, capacitor</keywords>
+	<repo>https://github.com/rifaniponk/cordova-plugin-fcm-modern.git</repo>
 
-	<js-module src="www/FCMPlugin.js" name="FCMPlugin">
+	<!-- The Cordova module loader cannot resolve arbitrary npm-relative files,
+	     so the js-module is the committed single-file CommonJS bundle. -->
+	<js-module src="dist/cordova/fcm-cordova.bundle.cjs" name="FCMPlugin">
 		<clobbers target="FCM" />
 	</js-module>
 
 	<engines>
-		<engine name="cordova" version=">=8.1.0" />
-		<engine name="cordova-android" version=">=6.4.0" />
-		<engine name="cordova-ios" version=">=5.0.0" />
+		<engine name="cordova" version=">=11.0.0" />
+		<engine name="cordova-android" version=">=13.0.0" />
+		<engine name="cordova-ios" version=">=7.0.0" />
 	</engines>
 
 	<!-- ANDROID CONFIGURATION -->
 	<platform name="android">
 		<preference name="ANDROID_DEFAULT_NOTIFICATION_ICON" default="@mipmap/ic_launcher" />
-		<preference name="ANDROID_FCM_VERSION" default="23.0.8" />
-		<preference name="ANDROID_FIREBASE_BOM_VERSION" default="29.0.1" />
-		<preference name="ANDROID_GOOGLE_SERVICES_VERSION" default="4.3.4" />
-		<preference name="ANDROID_GRADLE_TOOLS_VERSION" default="4.1.0" />
+		<preference name="ANDROID_FIREBASE_BOM_VERSION" default="35.1.0" />
+		<preference name="ANDROID_GOOGLE_SERVICES_VERSION" default="4.5.0" />
+		<preference name="ANDROID_GRADLE_TOOLS_VERSION" default="8.1.0" />
 
 		<config-file target="AndroidManifest.xml" parent="/manifest/application">
 			<activity android:name="com.gae.scaffolder.plugin.FCMPluginActivity" android:exported="true" android:launchMode="singleTop">
@@ -48,9 +50,9 @@
 					<category android:name="android.intent.category.DEFAULT" />
 				</intent-filter>
 			</activity>
-			<service 
-				android:name="com.gae.scaffolder.plugin.MyFirebaseMessagingService" 
-				android:exported="false" 
+			<service
+				android:name="com.gae.scaffolder.plugin.MyFirebaseMessagingService"
+				android:exported="false"
 				android:stopWithTask="false">
 				<intent-filter>
 					<action android:name="com.google.firebase.MESSAGING_EVENT"/>
@@ -81,7 +83,7 @@
 
 	<!-- IOS CONFIGURATION -->
 	<platform name="ios">
-		<preference name="IOS_FIREBASE_MESSAGING_VERSION" default="~> 7.4.0" />
+		<preference name="IOS_FIREBASE_MESSAGING_VERSION" default="~> 13.1.1" />
 		<config-file target="config.xml" parent="/*">
 			<feature name="FCMPlugin">
 				<param name="ios-package" value="FCMPlugin"/>
@@ -104,8 +106,6 @@
 			<false/>
 		</config-file>
 
-		<resource-file src="src/ios/Assets/GoogleService-Info.plist" target="Resources/GoogleService-Info.plist" />
-
 		<header-file src="src/ios/FCMPlugin.h" />
 		<source-file src="src/ios/FCMPlugin.m" />
 
@@ -121,16 +121,11 @@
 		<!-- FIREBASE COCOAPODS-->
 		<podspec>
 			<config>
-                <source url="https://github.com/CocoaPods/Specs.git"/>
+				<source url="https://github.com/CocoaPods/Specs.git"/>
 			</config>
 			<pods>
 				<pod name="Firebase/Messaging" spec="$IOS_FIREBASE_MESSAGING_VERSION"/>
 			</pods>
 		</podspec>
 	</platform>
-
-	<!-- COPY FCM CONFIG FILES TO PLATFORM BEFORE COMPILING -->
-	<hook src="scripts/copy_google_service_files.js" type="after_prepare" />
-	<hook src="scripts/copy_google_service_files.js" type="after_plugin_add" />
-	<hook src="scripts/install_ionic_dependencies.bat" type="after_plugin_install" />
 </plugin>

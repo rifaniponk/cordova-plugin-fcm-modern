@@ -15,6 +15,7 @@ fixtures/**/.gradle/
 fixtures/**/build/
 fixtures/**/*.apk
 .tmp/
+.npm-cache-tmp/
 
 # Local toolchain + CI scratch
 .gradle/

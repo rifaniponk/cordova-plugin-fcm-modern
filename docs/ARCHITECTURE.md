@@ -216,6 +216,7 @@ no `npx` of unlocked tools, no dependency overrides.
 | --- | --- |
 | `npm ci`, build, typecheck, unit tests, `npm audit --audit-level=low` | run locally, passing |
 | Packed-tarball `import`/`require`/types resolution | script provided, run locally |
+| plugin.xml/podspec structure (no hooks, every declared file shipped) | run locally (packaging tests); `pod spec lint` **pending — no CocoaPods host** |
 | Android compile of plugin + Cordova/Capacitor fixtures (Gradle 8.14.3, JDK 21, SDK 36) | run locally |
 | iOS compile / SPM resolution / CocoaPods resolution | **pending — no macOS/Xcode here**; CI job configured only |
 | Real push round-trip, permission dialogs, notification tap behaviour | **pending — device/emulator + Firebase project required** |
