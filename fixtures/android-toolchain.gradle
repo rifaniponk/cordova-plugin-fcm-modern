@@ -1,0 +1,97 @@
+/*
+ * Shared toolchain wiring for the Android consumer fixtures. Every path is
+ * resolved relative to the repository (never absolute), the same way
+ * scripts/native-jvm.mjs resolves the repo-local JDK. The jar names below are
+ * the classes.jar/jar of the Maven coordinates declared in each fixture.json;
+ * scripts/android-compile.mjs verifies each one exists and names the
+ * coordinate when a jar is missing.
+ */
+ext.toolchainDir = rootProject.file('../../.tmp/toolchain')
+
+// Android SDK platform jar: the real android.* + org.json API surface.
+ext.androidJar = new File(ext.toolchainDir, 'android.jar')
+
+ext.jarNames = { names ->
+    names.collect { new File(ext.toolchainDir, it) }.findAll { it.exists() }
+}
+
+// Firebase Messaging + Play Services Tasks/base/basement (real aar classes.jar).
+ext.firebaseJars = jarNames([
+    'firebase-messaging-26.0.1.jar',
+    'firebase-common-23.0.0.jar',
+    'play-services-tasks-18.4.0.jar',
+    'play-services-base-18.9.0.jar',
+    'play-services-basement-18.9.0.jar'
+])
+
+// cordova-android 15.1.0 dependency closure, per its declared poms:
+// androidx.appcompat:appcompat:1.6.1 → androidx.core:core:1.9.0.
+ext.cordovaClosureJars = jarNames([
+    'core-1.9.0.jar',
+    'annotation-1.3.0.jar',
+    'annotation-experimental-1.4.1.jar',
+    'appcompat-1.6.1.jar',
+    'appcompat-resources-1.6.1.jar',
+    'activity-1.8.0.jar',
+    'fragment-1.6.2.jar',
+    'webkit-1.6.0.jar',
+    'core-splashscreen-1.0.1.jar',
+    'lifecycle-common-2.5.1.jar',
+    'lifecycle-runtime-2.5.1.jar',
+    'lifecycle-viewmodel-2.5.1.jar',
+    'savedstate-1.2.0.jar',
+    'drawerlayout-1.0.0.jar',
+    'emoji2-1.2.0.jar',
+    'emoji2-views-helper-1.2.0.jar',
+    'collection-1.0.0.jar',
+    'cursoradapter-1.0.0.jar',
+    'resourceinspection-annotation-1.0.1.jar',
+    'kotlin-stdlib-1.7.10.jar'
+])
+
+// com.capacitorjs:core:8.5.3 dependency closure, per its pom:
+// androidx.core 1.17.0, appcompat 1.7.1, activity 1.11.0, fragment 1.8.9,
+// coordinatorlayout 1.3.0, webkit 1.14.0. androidx.annotation:annotation:1.8.1
+// and androidx.collection:collection:1.4.2 ship Kotlin-metadata jars with no
+// JVM classes, so the classes-bearing versions pinned by appcompat 1.7.1
+// (annotation 1.3.0, collection 1.0.0) are used instead; the mismatch is
+// recorded in fixtures/android-capacitor/fixture.json.
+ext.capacitorClosureJars = jarNames([
+    'core-1.17.0.jar',
+    'core-viewtree-1.0.0.jar',
+    'tracing-1.2.0.jar',
+    'interpolator-1.0.0.jar',
+    'versionedparcelable-1.1.1.jar',
+    'concurrent-futures-1.0.0.jar',
+    'annotation-1.3.0.jar',
+    'annotation-experimental-1.4.1.jar',
+    'collection-1.0.0.jar',
+    'appcompat-1.7.1.jar',
+    'appcompat-resources-1.7.1.jar',
+    'activity-1.11.0.jar',
+    'fragment-1.8.9.jar',
+    'coordinatorlayout-1.3.0.jar',
+    'customview-1.0.0.jar',
+    'loader-1.0.0.jar',
+    'viewpager-1.0.0.jar',
+    'webkit-1.14.0.jar',
+    'emoji2-1.3.0.jar',
+    'emoji2-views-helper-1.2.0.jar',
+    'drawerlayout-1.0.0.jar',
+    'cursoradapter-1.0.0.jar',
+    'profileinstaller-1.4.0.jar',
+    'savedstate-1.2.1.jar',
+    'resourceinspection-annotation-1.0.1.jar',
+    'lifecycle-common-2.6.2.jar',
+    'lifecycle-runtime-2.6.2.jar',
+    'lifecycle-viewmodel-2.6.1.jar',
+    'lifecycle-viewmodel-savedstate-2.6.1.jar',
+    'lifecycle-livedata-core-2.6.1.jar',
+    'core-splashscreen-1.0.1.jar',
+    'kotlin-stdlib-2.0.21.jar',
+    'kotlinx-coroutines-core-1.8.1.jar',
+    'jspecify-1.0.0.jar'
+])
+
+ext.capacitorCoreJar = new File(ext.toolchainDir, 'capacitor-core-8.5.3.jar')
+ext.pluginSources = rootProject.file('../../src/android/dev')

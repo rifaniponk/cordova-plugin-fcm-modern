@@ -13,8 +13,10 @@ import org.apache.cordova.CallbackContext;
 import org.apache.cordova.CordovaInterface;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CordovaWebView;
+import org.apache.cordova.PermissionHelper;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.function.Consumer;
@@ -25,6 +27,8 @@ import java.util.function.Consumer;
  * queued events, and late attachers receive the bounded replay.
  */
 public class FCMModernCordovaPlugin extends CordovaPlugin {
+    private static final int NOTIFICATION_PERMISSION_REQUEST_CODE = 0xFC40;
+
     private AndroidFirebaseGateway gateway;
     private Consumer<JSONObject> notificationSink;
     private Consumer<String> tokenSink;
@@ -40,16 +44,16 @@ public class FCMModernCordovaPlugin extends CordovaPlugin {
                 return;
             }
             pendingPermission = callback;
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS});
+            PermissionHelper.requestPermissions(
+                this, NOTIFICATION_PERMISSION_REQUEST_CODE, new String[]{Manifest.permission.POST_NOTIFICATIONS});
         });
     }
 
     @Override
-    public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws Exception {
+    public boolean execute(String action, JSONArray args, CallbackContext callbackContext) throws JSONException {
         switch (action) {
             case "ready":
-                FCMModernHolder.install(FCMModernHolder.bus(),
-                    new FCMModernCore(FCMModernHolder.bus(), gateway));
+                FCMModernHolder.install(gateway);
                 callbackContext.success();
                 return true;
             case "getToken":
@@ -86,7 +90,8 @@ public class FCMModernCordovaPlugin extends CordovaPlugin {
                 return true;
             case "getInitialPushPayload": {
                 JSONObject tap = FCMModernHolder.core().getStartupTap();
-                callbackContext.success(tap == null ? JSONObject.NULL : tap);
+                // JSONObject.NULL is typed as Object; CallbackContext wants JSONObject.
+                callbackContext.success(tap == null ? (JSONObject) JSONObject.NULL : tap);
                 return true;
             }
             case "hasPermission":
@@ -162,7 +167,6 @@ public class FCMModernCordovaPlugin extends CordovaPlugin {
     private void attachBridge(CallbackContext callbackContext) {
         detachBridge();
         bridgeContext = callbackContext;
-        callbackContext.setKeepCallback(true);
         notificationSink = payload -> send("notification", payload);
         tokenSink = token -> send("tokenRefresh", token == null ? "" : token);
         FCMModernHolder.bus().attachNotificationSink(notificationSink);
@@ -189,7 +193,9 @@ public class FCMModernCordovaPlugin extends CordovaPlugin {
         JSONArray envelope = new JSONArray();
         envelope.put(event);
         envelope.put(value);
-        context.sendPluginResult(new PluginResult(PluginResult.Status.OK, envelope), true);
+        PluginResult result = new PluginResult(PluginResult.Status.OK, envelope);
+        result.setKeepCallback(true);
+        context.sendPluginResult(result);
     }
 
     @Override

@@ -1,0 +1,24 @@
+/*
+ * Fixture A dependency module: cordova-android's own Java sources, compiled by
+ * real Gradle/javac against the real SDK platform jar and cordova-android's
+ * declared androidx closure (androidx.appcompat:appcompat:1.6.1 → androidx.core
+ * 1.9.0 per its pom). Mirrors how a real Cordova app builds :CordovaLib.
+ */
+plugins { id 'java' }
+apply from: '../../android-toolchain.gradle'
+
+sourceSets.main.java.srcDirs = [rootProject.file('../../.tmp/toolchain/package/framework/src')]
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+}
+
+dependencies {
+    implementation files(androidJar)
+    implementation files(cordovaClosureJars)
+}

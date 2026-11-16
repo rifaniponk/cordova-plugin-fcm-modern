@@ -58,7 +58,7 @@ public final class AndroidFirebaseGateway implements FCMModernCore.NativeGateway
 
     @Override
     public void subscribeTopic(String topic, FCMModernCore.OperationCallback callback) {
-        FirebaseMessaging.getInstance().subscribe(topic).addOnCompleteListener(task -> {
+        FirebaseMessaging.getInstance().subscribeToTopic(topic).addOnCompleteListener(task -> {
             if (task.isSuccessful()) {
                 callback.onSuccess();
             } else {
@@ -69,7 +69,7 @@ public final class AndroidFirebaseGateway implements FCMModernCore.NativeGateway
 
     @Override
     public void unsubscribeTopic(String topic, FCMModernCore.OperationCallback callback) {
-        FirebaseMessaging.getInstance().unsubscribe(topic).addOnCompleteListener(task -> {
+        FirebaseMessaging.getInstance().unsubscribeFromTopic(topic).addOnCompleteListener(task -> {
             if (task.isSuccessful()) {
                 callback.onSuccess();
             } else {
@@ -102,7 +102,7 @@ public final class AndroidFirebaseGateway implements FCMModernCore.NativeGateway
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
             return true;
         }
-        return android.content.pm.PackageManager.PERMISSION_GRANTED == android.content.ContextCompat.checkSelfPermission(
+        return android.content.pm.PackageManager.PERMISSION_GRANTED == androidx.core.content.ContextCompat.checkSelfPermission(
             context, android.Manifest.permission.POST_NOTIFICATIONS);
     }
 }

@@ -29,21 +29,21 @@ public final class FCMPayload {
     public static JSONObject normalize(Map<String, String> data, String messageId, boolean wasTapped,
                                        String title, String subtitle, String body, Integer badge) {
         JSONObject payload = new JSONObject();
-        payload.put("wasTapped", Boolean.valueOf(wasTapped));
+        put(payload, "wasTapped", Boolean.valueOf(wasTapped));
         if (messageId != null && !messageId.isEmpty()) {
-            payload.put("messageId", messageId);
+            put(payload, "messageId", messageId);
         }
         if (title != null) {
-            payload.put("title", title);
+            put(payload, "title", title);
         }
         if (subtitle != null) {
-            payload.put("subtitle", subtitle);
+            put(payload, "subtitle", subtitle);
         }
         if (body != null) {
-            payload.put("body", body);
+            put(payload, "body", body);
         }
         if (badge != null) {
-            payload.put("badge", badge);
+            put(payload, "badge", badge);
         }
 
         java.util.List<String> collisions = new java.util.ArrayList<>();
@@ -59,25 +59,38 @@ public final class FCMPayload {
                 collisions.add(key);
                 if (custom == null) {
                     custom = new JSONObject();
-                    payload.put("custom", custom);
+                    put(payload, "custom", custom);
                 }
-                custom.put(key, entry.getValue());
+                put(custom, key, entry.getValue());
                 continue;
             }
-            payload.put(key, entry.getValue());
+            put(payload, key, entry.getValue());
         }
 
         if (!collisions.isEmpty() || !dropped.isEmpty()) {
             JSONObject meta = new JSONObject();
             if (!collisions.isEmpty()) {
-                meta.put("collisions", collisions);
+                put(meta, "collisions", collisions);
             }
             if (!dropped.isEmpty()) {
-                meta.put("dropped", dropped);
+                put(meta, "dropped", dropped);
             }
-            payload.put("_fcm", meta);
+            put(payload, "_fcm", meta);
         }
         return payload;
+    }
+
+    /**
+     * android.jar's org.json.JSONObject.put declares a checked JSONException;
+     * the runtime-free JVM harness stub does not. Catching Exception compiles
+     * against both, and these literal keys can never fail.
+     */
+    private static void put(JSONObject target, String key, Object value) {
+        try {
+            target.put(key, value);
+        } catch (Exception failure) {
+            throw new IllegalStateException("payload key '" + key + "' could not be stored", failure);
+        }
     }
 
     /** Dedup identity: canonical id when present, otherwise no key at all. */

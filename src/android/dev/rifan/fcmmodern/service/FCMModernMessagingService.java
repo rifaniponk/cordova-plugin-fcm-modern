@@ -36,7 +36,7 @@ public class FCMModernMessagingService extends FirebaseMessagingService {
         RemoteMessage.Notification notification = message.getNotification();
         String title = notification != null ? notification.getTitle() : null;
         String body = notification != null ? notification.getBody() : null;
-        Integer badge = notification != null ? notification.getBadge() : null;
+        Integer badge = notification != null ? notification.getNotificationCount() : null;
 
         FCMModernCore.enqueue(FCMModernHolder.bus(), data, messageId, false, title, null, body, badge);
 

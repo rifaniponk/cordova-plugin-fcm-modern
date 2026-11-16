@@ -1,0 +1,40 @@
+/*
+ * Fixture B: a Capacitor consumer app. The plugin's Android sources are merged
+ * into the app source set (core + service + Capacitor adapter + gateway) and
+ * the Cordova adapter is excluded, exactly as Capacitor's android install must
+ * exclude it. The merged file list is what Gradle's own source set reports —
+ * the same tree compileJava consumes.
+ */
+plugins { id 'java' }
+apply from: '../android-toolchain.gradle'
+
+sourceSets.main.java {
+    srcDirs = [pluginSources, file('app/src/main/java')]
+    exclude 'rifan/fcmmodern/cordova/**'
+}
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+}
+
+dependencies {
+    implementation project(':CordovaLib')
+    implementation files(androidJar)
+    implementation files(capacitorClosureJars)
+    implementation files(capacitorCoreJar)
+    implementation files(firebaseJars)
+}
+
+tasks.register('mergedSources') {
+    doLast {
+        def root = rootProject.file('../..').toPath()
+        sourceSets.main.java.files.sort().each { f ->
+            println 'MERGED ' + root.relativize(f.toPath()).toString()
+        }
+    }
+}

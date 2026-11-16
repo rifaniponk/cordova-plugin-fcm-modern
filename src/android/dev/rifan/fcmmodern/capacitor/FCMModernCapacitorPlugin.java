@@ -6,11 +6,12 @@ import android.os.Build;
 
 import androidx.core.app.ActivityCompat;
 
+import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginResult;
+import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
-import com.getcapacitor.annotation.PluginMethod;
 
 import com.google.firebase.messaging.FirebaseMessaging;
 
@@ -52,8 +53,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
             ActivityCompat.requestPermissions(getActivity(),
                 new String[]{Manifest.permission.POST_NOTIFICATIONS}, PERMISSION_REQUEST_CODE);
         });
-        FCMModernHolder.install(FCMModernHolder.bus(),
-            new FCMModernCore(FCMModernHolder.bus(), gateway));
+        FCMModernHolder.install(gateway);
     }
 
     @PluginMethod
@@ -66,7 +66,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
         FCMModernHolder.core().getToken(new FCMModernCore.TokenCallback() {
             @Override
             public void onResult(String token) {
-                JSONObject result = new JSONObject();
+                JSObject result = new JSObject();
                 result.put("value", token == null ? "" : token);
                 call.resolve(result);
             }
@@ -130,12 +130,24 @@ public class FCMModernCapacitorPlugin extends Plugin {
     @PluginMethod
     public void getInitialPushPayload(PluginCall call) {
         JSONObject tap = FCMModernHolder.core().getStartupTap();
-        call.resolve(tap == null ? new JSONObject() : tap);
+        call.resolve(tap == null ? new JSObject() : copy(tap));
+    }
+
+    /** The bus carries plain JSONObject payloads; Capacitor resolves JSObject. */
+    private static JSObject copy(JSONObject source) {
+        JSObject target = new JSObject();
+        // Android's org.json.JSONObject exposes names() (a JSONArray), not keySet().
+        org.json.JSONArray names = source.names();
+        for (int index = 0; index < names.length(); index++) {
+            String key = names.optString(index);
+            target.put(key, source.opt(key));
+        }
+        return target;
     }
 
     @PluginMethod
     public void hasPermission(PluginCall call) {
-        JSONObject result = new JSONObject();
+        JSObject result = new JSObject();
         result.put("value", gateway.hasNotificationPermission());
         call.resolve(result);
     }
@@ -143,7 +155,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
     @PluginMethod
     public void requestPushPermission(PluginCall call) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
-            JSONObject result = new JSONObject();
+            JSObject result = new JSObject();
             result.put("value", true);
             call.resolve(result);
             return;
@@ -152,14 +164,14 @@ public class FCMModernCapacitorPlugin extends Plugin {
         FCMModernHolder.core().requestPermission(new FCMModernCore.PermissionCallback() {
             @Override
             public void onGranted() {
-                JSONObject result = new JSONObject();
+                JSObject result = new JSObject();
                 result.put("value", true);
                 call.resolve(result);
             }
 
             @Override
             public void onDenied(String message) {
-                JSONObject result = new JSONObject();
+                JSObject result = new JSObject();
                 result.put("value", false);
                 call.resolve(result);
             }
@@ -192,7 +204,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
 
     @PluginMethod
     public void isAutoInitEnabled(PluginCall call) {
-        JSONObject result = new JSONObject();
+        JSObject result = new JSObject();
         result.put("value", FirebaseMessaging.getInstance().isAutoInitEnabled());
         call.resolve(result);
     }
@@ -216,20 +228,30 @@ public class FCMModernCapacitorPlugin extends Plugin {
 
     @PluginMethod
     public void addListener(PluginCall call) {
+        // Registers the JS callback with Capacitor's listener registry, which
+        // notifyListeners() then dispatches events to.
+        super.addListener(call);
         String type = call.getString("type");
         if ("notification".equals(type)) {
-            Consumer<JSONObject> sink = payload -> call.sendEvent("notification", payload);
+            Consumer<JSONObject> sink = payload -> notifyListeners("notification", copy(payload));
             notificationListeners.add(call);
             notificationSinks.add(sink);
             FCMModernHolder.bus().attachNotificationSink(sink);
         } else if ("tokenRefresh".equals(type)) {
-            Consumer<String> sink = token -> call.sendEvent("tokenRefresh", token == null ? "" : token);
+            Consumer<String> sink = token -> notifyListeners("tokenRefresh", tokenValue(token));
             tokenListeners.add(call);
             tokenSinks.add(sink);
             FCMModernHolder.bus().attachTokenSink(sink);
         } else {
             call.reject("unknown listener type: " + type);
         }
+    }
+
+    /** src/bridges/capacitorBridge.ts reads event.token for tokenRefresh. */
+    private static JSObject tokenValue(String token) {
+        JSObject result = new JSObject();
+        result.put("token", token == null ? "" : token);
+        return result;
     }
 
     @PluginMethod
@@ -276,7 +298,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
         @Override
         public void detach() {
             FCMModernHolder.bus().detachNotificationSink(sink);
-            listener.release();
+            listener.release(getBridge());
         }
     }
 
@@ -292,7 +314,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
         @Override
         public void detach() {
             FCMModernHolder.bus().detachTokenSink(sink);
-            listener.release();
+            listener.release(getBridge());
         }
     }
 
@@ -313,7 +335,7 @@ public class FCMModernCapacitorPlugin extends Plugin {
     }
 
     @Override
-    protected void onRequestPermissionResult(int requestCode, String[] permissions, int[] grantResults) {
+    protected void handleRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         FCMModernCore.PermissionCallback callback = pendingPermissionCallback;
         pendingPermissionCallback = null;
         pendingPermissionCall = null;

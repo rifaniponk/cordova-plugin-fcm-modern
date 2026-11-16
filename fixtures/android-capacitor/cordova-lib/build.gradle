@@ -1,0 +1,27 @@
+/*
+ * Fixture B dependency module: cordova-android's Java sources, compiled by
+ * real Gradle/javac against the closure com.capacitorjs:core:8.5.3 declares —
+ * its pom depends on org.apache.cordova:framework:14.0.1, so the Capacitor
+ * consumer really does need cordova-android classes on its compile path. The
+ * fixture compiles the cordova-android 15.1.0 npm sources instead of the
+ * declared 14.0.1 Maven artifact; the version mismatch is recorded in
+ * fixture.json rather than hidden.
+ */
+plugins { id 'java' }
+apply from: '../../android-toolchain.gradle'
+
+sourceSets.main.java.srcDirs = [rootProject.file('../../.tmp/toolchain/package/framework/src')]
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.release = 11
+}
+
+dependencies {
+    implementation files(androidJar)
+    implementation files(capacitorClosureJars)
+}

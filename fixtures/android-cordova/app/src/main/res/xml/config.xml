@@ -1,0 +1,11 @@
+<?xml version='1.0' encoding='utf-8'?>
+<widget id="com.example.cordovaapp" version="1.0.0" xmlns="http://www.w3.org/ns/widgets">
+    <name>FCMModern Cordova fixture</name>
+    <!-- Real Cordova discovery: the adapter class is resolved from this
+         declaration, not from Java code, so it must compile in the app. -->
+    <preference name="AndroidXEnabled" value="true" />
+    <feature name="FCMPlugin">
+        <param name="android-package" value="dev.rifan.fcmmodern.cordova.FCMModernCordovaPlugin" />
+        <param name="onload" value="true" />
+    </feature>
+</widget>
