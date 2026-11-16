@@ -108,17 +108,20 @@
 			<false/>
 		</config-file>
 
-		<header-file src="src/ios/FCMPlugin.h" />
-		<source-file src="src/ios/FCMPlugin.m" />
+		<!-- Shared native core (also shipped via fcm-modern.podspec) plus the
+		     Cordova CDVPlugin adapter. The Capacitor Swift adapter ships via
+		     Package.swift and is deliberately not compiled for Cordova. -->
+		<header-file src="src/ios/core/FCMModernCore.h" />
+		<source-file src="src/ios/core/FCMModernCore.m" />
+		<header-file src="src/ios/core/FCMEventBus.h" />
+		<source-file src="src/ios/core/FCMEventBus.m" />
+		<header-file src="src/ios/core/FCMPayload.h" />
+		<source-file src="src/ios/core/FCMPayload.m" />
+		<header-file src="src/ios/core/FCMNotificationDelegate.h" />
+		<source-file src="src/ios/core/FCMNotificationDelegate.m" />
 
-		<header-file src="src/ios/AppDelegate+FCMPlugin.h" />
-		<source-file src="src/ios/AppDelegate+FCMPlugin.m" />
-
-		<header-file src="src/ios/FCMPluginIOS9Support.h" />
-		<source-file src="src/ios/FCMPluginIOS9Support.m" />
-
-		<header-file src="src/ios/FCMNotificationCenterDelegate.h" />
-		<source-file src="src/ios/FCMNotificationCenterDelegate.m" />
+		<header-file src="src/ios/cordova/FCMPlugin.h" />
+		<source-file src="src/ios/cordova/FCMPlugin.m" />
 
 		<!-- FIREBASE COCOAPODS-->
 		<podspec>

@@ -1,11 +1,15 @@
 Pod::Spec.new do |spec|
   spec.name = 'FCMModern'
   spec.version = '8.0.0'
-  spec.summary = 'Firebase Cloud Messaging shared native core and Cordova adapter for Cordova/Capacitor apps.'
+  spec.summary = 'Firebase Cloud Messaging shared native core for Cordova/Capacitor iOS apps.'
   spec.description = <<-DESC
-  Objective-C shared core (token, topics, permission, channels, event bus,
-  payload sanitizer) plus the Cordova CDVPlugin adapter. Capacitor uses the
-  separate Swift/SPM route; a host installs exactly one runtime adapter.
+  Runtime-free Objective-C shared core (token/registration, APNs readiness,
+  topics, permission, foreground presentation, startup buffering, receipt/tap
+  dedup, payload sanitizer). The pod ships the shared core only:
+  the Cordova CDVPlugin adapter is compiled in the app target via plugin.xml
+  source-file entries, and the Capacitor Swift adapter is delivered through
+  Package.swift. A host installs exactly one runtime adapter; Firebase
+  Analytics is not a dependency.
   DESC
   spec.homepage = 'https://github.com/rifaniponk/cordova-plugin-fcm-modern'
   spec.license = { :type => 'MIT', :file => 'LICENSE' }
@@ -15,12 +19,13 @@ Pod::Spec.new do |spec|
     :tag => spec.version.to_s
   }
 
-  spec.platform = :ios, '13.0'
+  # Firebase Apple SDK 13.1.1 requires iOS 15 as its deployment target.
+  spec.platform = :ios, '15.0'
   spec.requires_frameworks = true
 
-  # The shared iOS core + Cordova adapter only. The Capacitor Swift adapter is
-  # delivered through Package.swift, never through this pod.
-  spec.source_files = 'src/ios/**/*.{h,m}'
+  # Shared core only. Cordova adapter: plugin.xml. Capacitor adapter: SPM.
+  spec.source_files = 'src/ios/core/**/*.{h,m}'
+  spec.public_header_files = 'src/ios/core/*.h'
 
   spec.dependency 'Firebase/Messaging', '~> 13.1.1'
 

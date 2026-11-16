@@ -103,7 +103,7 @@ test('the CocoaPods route matches the rewritten package', () => {
     assert.match(podspec, /spec\.name = 'FCMModern'/)
     assert.match(podspec, new RegExp(`spec\\.version = '${manifest.version}'`))
     assert.match(podspec, /:type => 'MIT'/)
-    assert.match(podspec, /spec\.platform = :ios, '13\.0'/)
+    assert.match(podspec, /spec\.platform = :ios, '15\.0'/, 'Firebase 13.1.1 requires iOS 15')
     assert.match(podspec, /Firebase\/Messaging', '~> 13\.1\.1'/)
     assert.ok(!podspec.includes('FCMPluginIOS9Support'), 'iOS 9 shims are not compiled')
 })
