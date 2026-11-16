@@ -55,9 +55,14 @@ function javaSources(dir) {
     return found.sort()
 }
 
+// The JVM harness compiles only the runtime-free native core (package
+// dev.rifan.fcmmodern.core). SDK-bound service/adapter sources compile via
+// Gradle against real artifacts, never through this harness.
+const coreDir = join(root, 'src', 'android', 'dev', 'rifan', 'fcmmodern', 'core')
+
 const sources = [
     ...javaSources(join(root, 'tests', 'android', 'stubs')),
-    ...javaSources(join(root, 'src', 'android', 'dev')),
+    ...javaSources(coreDir),
     ...javaSources(join(root, 'tests', 'android', 'dev'))
 ]
 
@@ -93,7 +98,7 @@ for (const testClass of testClasses.sort()) {
 }
 
 // Keep the harness honest: every shipped dev-core source must be compiled.
-for (const source of javaSources(join(root, 'src', 'android', 'dev'))) {
+for (const source of javaSources(coreDir)) {
     const pkg = /package\s+([\w.]+);/.exec(readFileSync(source, 'utf8'))?.[1] ?? ''
     const classFile = join(
         outDir,
@@ -110,5 +115,5 @@ for (const source of javaSources(join(root, 'src', 'android', 'dev'))) {
     }
 }
 console.log(
-    `[native-jvm] ok — compiled ${sources.length} sources (${relative(root, join(root, 'src', 'android', 'dev'))} included)`
+    `[native-jvm] ok — compiled ${sources.length} sources (${relative(root, coreDir)} included)`
 )

@@ -49,8 +49,8 @@ public final class FCMModernCore {
         void requestPermission(PermissionCallback callback);
     }
 
-    private static final String CHANNEL_ID = "fcmmodern_default";
-    private static final String CHANNEL_NAME = "FCMModern Push Notifications";
+    public static final String CHANNEL_ID = "fcmmodern_default";
+    public static final String CHANNEL_NAME = "FCMModern Push Notifications";
 
     private final FcmEventBus bus;
     private final NativeGateway gateway;
@@ -194,9 +194,15 @@ public final class FCMModernCore {
     /** Normalizes one delivery and enqueues the event on the shared bus. */
     public JSONObject onNativeEvent(Map<String, String> data, String messageId, boolean wasTapped,
                                     String title, String subtitle, String body, Integer badge) {
+        return enqueue(bus, data, messageId, wasTapped, title, subtitle, body, badge);
+    }
+
+    /** Usable before any adapter exists, so cold-start events still queue. */
+    public static JSONObject enqueue(FcmEventBus targetBus, Map<String, String> data, String messageId,
+                                     boolean wasTapped, String title, String subtitle, String body, Integer badge) {
         JSONObject payload = FCMPayload.normalize(data, messageId, wasTapped, title, subtitle, body, badge);
-        String dedupKey = FCMPayload.dedupKey(messageId, bus.nextFallbackId());
-        bus.enqueueNotification(wasTapped ? FcmEventBus.Space.TAP : FcmEventBus.Space.RECEIPT,
+        String dedupKey = FCMPayload.dedupKey(messageId, targetBus.nextFallbackId());
+        targetBus.enqueueNotification(wasTapped ? FcmEventBus.Space.TAP : FcmEventBus.Space.RECEIPT,
             payload, dedupKey);
         return payload;
     }
