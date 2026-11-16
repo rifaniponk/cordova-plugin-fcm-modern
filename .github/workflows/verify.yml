@@ -1,0 +1,164 @@
+name: verify
+
+# Least-privilege CI: the workflow reads the repository only. It never writes a
+# commit, never publishes a package, and never reads a secret (`secrets.*` is
+# unused; `GITHUB_TOKEN` is never passed to any step).
+on:
+    push:
+        branches: [main]
+    pull_request:
+    workflow_dispatch:
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+permissions:
+    contents: read
+
+env:
+    # npm's engines check and the Node-22 guard both print diagnostics; keep them readable.
+    FORCE_COLOR: '3'
+
+jobs:
+    verify:
+        name: Verify (Node 24 + real JDK)
+        runs-on: ubuntu-latest
+        timeout-minutes: 25
+        steps:
+            - uses: actions/checkout@v4
+            - name: Node 24 (package.json engines require >= 24)
+              uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: npm
+            # Real JDK: `npm run test:native` compiles the runtime-free Android
+            # core with javac and runs the JVM behaviour harness on the host JVM.
+            # setup-java exports JAVA_HOME, which scripts/native-jvm.mjs resolves.
+            - name: JDK for the native JVM harness
+              uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: 17
+            # `npm ci` only: no lifecycle hook in this package downloads a tool,
+            # and nothing here installs Gradle, the Android SDK, CocoaPods or Xcode.
+            - run: npm ci
+            # format:check → typecheck → build → tests → ngc AOT fixture →
+            # native JVM harness → npm audit (see package.json "verify").
+            - run: npm run verify
+
+    node22_guard:
+        name: Node 22 is refused (engines guard exits 1)
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 22
+                  cache: npm
+            - run: npm ci
+            # The suite needs Node's native type stripping, so `npm run test`
+            # refuses to run below 24 with the engines message instead of a
+            # misleading ERR_UNKNOWN_FILE_EXTENSION. This step asserts that
+            # refusal; a job on Node 22 stays green because the refusal is the
+            # expected outcome, not a failure.
+            - name: Guard must exit 1 on Node 22
+              run: |
+                  code=0
+                  npm run test >"$RUNNER_TEMP/node22.log" 2>&1 || code=$?
+                  cat "$RUNNER_TEMP/node22.log"
+                  if [ "$code" -ne 1 ]; then
+                      echo "expected the engines guard to exit 1, got $code"
+                      exit 1
+                  fi
+                  grep -q 'requires Node >= 24' "$RUNNER_TEMP/node22.log"
+
+    dependency_scan:
+        name: Dependency vulnerability scan (npm lockfile + Gradle lockfiles)
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: npm
+            - uses: actions/setup-java@v4
+              with:
+                  distribution: temurin
+                  java-version: 17
+            - run: npm ci
+            # `npm audit` cannot assess the Firebase SDKs, so the JS findings and
+            # the native dependency findings are scanned by separate steps. Both
+            # steps fail the job on an unresolved finding; there is no ignore list.
+            - name: npm audit (JS dependency graph)
+              run: npm run audit
+            - name: osv-scanner on package-lock.json
+              run: |
+                  # Pinned release plus that release's own SHA256SUMS, so a version
+                  # bump cannot silently swap in an unverified binary.
+                  osv_version=v2.7.1
+                  osv_asset=osv-scanner_linux_amd64
+                  osv_base="https://github.com/google/osv-scanner/releases/download/${osv_version}"
+                  curl -fsSL -o "$RUNNER_TEMP/osv-scanner" "${osv_base}/${osv_asset}"
+                  curl -fsSL -o "$RUNNER_TEMP/SHA256SUMS" "${osv_base}/osv-scanner_SHA256SUMS"
+                  grep "  ${osv_asset}$" "$RUNNER_TEMP/SHA256SUMS" > "$RUNNER_TEMP/checksums.txt"
+                  (cd "$RUNNER_TEMP" && sha256sum -c checksums.txt)
+                  chmod +x "$RUNNER_TEMP/osv-scanner"
+                  # Non-zero exit on any unresolved finding: no ignore list, no
+                  # --skip-vulnerability, no suppression file.
+                  "$RUNNER_TEMP/osv-scanner" --lockfile package-lock.json
+            # Configured, never executed locally: Gradle vulnerability scanning
+            # needs the Android consumer fixtures (fixtures/**/gradlew), which do
+            # not exist in this tree yet. The step self-disables until they land,
+            # and docs/VALIDATION.md keeps it in the "configured in CI" column.
+            - name: Gradle dependency lockfile scan (configured, not locally passed)
+              if: hashFiles('fixtures/**/gradlew') != ''
+              run: |
+                  for fixture in $(find fixtures -name gradlew -print | sort); do
+                      project=$(dirname "$fixture")
+                      echo "::group=$project"
+                      (cd "$project" && ./gradlew --no-daemon --write-locks)
+                      "$RUNNER_TEMP/osv-scanner" --lockfile "$project/gradle-dependencies-lock.xml"
+                      echo "::endgroup::"
+                  done
+
+    ios_macos:
+        name: iOS routes on macOS (configured — never passed locally)
+        runs-on: macos-latest
+        timeout-minutes: 40
+        steps:
+            - uses: actions/checkout@v4
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: 24
+                  cache: npm
+            # Packaging needs the committed dist/; no build step is hidden in a
+            # Cordova or npm lifecycle hook.
+            - run: npm ci
+            - run: npm run build
+            # Configured, never executed locally (no macOS/Xcode host in this
+            # workspace). Each step disables itself until its inputs exist.
+            - name: CocoaPods podspec lint (configured, not locally passed)
+              if: hashFiles('fcm-modern.podspec') != '' && hashFiles('fixtures/capacitor-ios-app/package.json') != ''
+              run: |
+                  pod --version
+                  pod repo update
+                  pod lib lint fcm-modern.podspec --allow-warnings
+            - name: Swift package resolution (configured, not locally passed)
+              if: hashFiles('Package.swift') != ''
+              run: swift build
+            - name: iOS simulator build of the Capacitor fixture (configured, not locally passed)
+              if: hashFiles('fixtures/capacitor-ios-app/package.json') != ''
+              run: |
+                  cd fixtures/capacitor-ios-app
+                  npm ci
+                  npx cap --version
+                  npx cap add ios
+                  npx cap sync ios
+                  xcodebuild -version
+                  # Capacitor's generated iOS project: workspace "App", scheme "App".
+                  xcodebuild -workspace ios/App/App.xcworkspace -scheme App \
+                      -sdk iphonesimulator -configuration Debug \
+                      -destination 'generic/platform=iOS Simulator' build

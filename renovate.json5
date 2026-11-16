@@ -1,0 +1,74 @@
+// Dependency update automation for cordova-plugin-fcm-modern.
+//
+// Renovate (rather than Dependabot) because devDependencies are exact-pinned in
+// package.json and the lockfile must be refreshed in the same PR. There is no
+// .github/dependabot.yml on purpose: two bots opening duplicate PRs for the same
+// dependency is a review hazard, not a safety improvement.
+//
+// Scope: npm dependencies, GitHub Actions refs, and the pinned osv-scanner
+// release in the workflow. The native SDK versions are *not* managed here — the
+// Firebase Android BoM, google-services and the Firebase iOS pod version are
+// plugin.xml preferences / Gradle declarations owned by the host app (see README
+// "Setup per runtime"), and docs/VALIDATION.md records them as manually reviewed.
+//
+// This file is configuration only: it changes nothing until the Renovate app is
+// installed on the repository, and docs/VALIDATION.md lists it under
+// "configured in CI", never "passed locally".
+{
+    $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+    extends: ['config:recommended', ':semanticCommits', ':automergeMinor'],
+
+    // One lockfile, `npm ci` in CI: keep package.json and package-lock.json in
+    // step so the PR is installable as-is.
+    lockfileMaintenance: true,
+
+    // Never merge a release published less than a week ago: supply-chain churn
+    // is caught by the CI dependency scan, not by speed.
+    minimumPublishDate: '7 days',
+
+    // Do not queue a PR per minor release of the optional Angular/RxJS peers;
+    // group them so a consumer can upgrade Angular in one change.
+    prCreation: 'notPending',
+
+    packageRules: [
+        {
+            // Exact pins stay exact — the project ships a deterministic build.
+            matchTypes: ['devDependency'],
+            rangeStrategy: 'pin'
+        },
+        {
+            // Optional peers stay ranges: pinning a peer would force every
+            // consuming app onto one Angular/Capacitor/RxJS patch.
+            matchTypes: ['dependency'],
+            rangeStrategy: 'bump'
+        },
+        {
+            matchPackageNames: ['@angular/compiler', '@angular/compiler-cli', '@angular/core'],
+            groupName: 'angular'
+        },
+        {
+            matchPackageNames: ['typescript', '@types/node'],
+            groupName: 'toolchain'
+        },
+        {
+            // TypeScript 7 is deliberately not offered: @angular/compiler-cli
+            // 22.2.3 requires >=6.0 <6.1, so a major bump would break the ngc AOT
+            // fixture that `npm run verify` runs.
+            matchPackageNames: ['typescript'],
+            allowedVersions: '6.0'
+        }
+    ],
+
+    customManagers: [
+        {
+            // The workflow verifies its download against the release's own
+            // SHA256SUMS, so bumping the version alone stays self-consistent.
+            customType: 'regex',
+            fileMatch: ['.github/workflows/verify.yml'],
+            matchStrings: ['osv_version=(?<currentValue>v\\S+)'],
+            depName: 'google/osv-scanner',
+            packageName: 'google/osv-scanner',
+            datasource: 'github-releases'
+        }
+    ]
+}

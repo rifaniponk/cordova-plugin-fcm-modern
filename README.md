@@ -1,6 +1,7 @@
 ⚠️ After 3 years of developing and maintaining this plugin, due to the lack of sponsorship from the community and more promising opportunities, this project is now frozen. Anyone can clone and continue the good work. ⚠️
 
 # Google Firebase Cloud Messaging Cordova Push Plugin
+
 > Extremely easy plug&play push notification plugin for Cordova applications with Google Firebase FCM.
 
 [![Donate](https://img.shields.io/badge/Donate-Paypal-0a83fc.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=B33LA4QVUGVBW&source=url)
@@ -14,27 +15,29 @@
 [![Known Vulnerabilities](https://snyk.io/test/github/andrehtissot/cordova-plugin-fcm-with-dependecy-updated/badge.svg?targetFile=package.json)](https://snyk.io/test/github/andrehtissot/cordova-plugin-fcm-with-dependecy-updated?targetFile=package.json)
 [![DeepScan grade](https://deepscan.io/api/teams/3417/projects/5068/branches/39495/badge/grade.svg)](https://deepscan.io/dashboard#view=project&tid=3417&pid=5068&bid=39495)
 
-[How it works](#how-it-works) | [Installation](#installation) | [Push Payload Configuration](#push-payload-configuration) |  [Features](#features) | [Example Apps](#example-apps) | [Companion Plugins](#companion-plugins) | [Changelog](https://github.com/andrehtissot/cordova-plugin-fcm-with-dependecy-updated/blob/master/CHANGELOG.md) | [Authorship](#authorship)
+[How it works](#how-it-works) | [Installation](#installation) | [Push Payload Configuration](#push-payload-configuration) | [Features](#features) | [Example Apps](#example-apps) | [Companion Plugins](#companion-plugins) | [Changelog](https://github.com/andrehtissot/cordova-plugin-fcm-with-dependecy-updated/blob/master/CHANGELOG.md) | [Authorship](#authorship)
 
 ## How it works
+
 Send a push notification to a single device or topic.
 
 - Application is in foreground:
 
-  - The notification data is received in the JavaScript callback without notification bar message (this is the normal behavior of mobile push notifications).
-  - For Android, to show the notification received on the foreground, it's recommended to use [cordova-plugin-local-notification](https://github.com/katzer/cordova-plugin-local-notifications#readme) as it provides many presentation and interaction features.
+    - The notification data is received in the JavaScript callback without notification bar message (this is the normal behavior of mobile push notifications).
+    - For Android, to show the notification received on the foreground, it's recommended to use [cordova-plugin-local-notification](https://github.com/katzer/cordova-plugin-local-notifications#readme) as it provides many presentation and interaction features.
 
 - Application is in background or closed:
 
-  - The device displays the notification message in the device notification bar.
-  - If the user taps the notification, the application comes to foreground and the notification data is received in the JavaScript callback.
-  - If the user does not tap the notification but opens the application, nothing happens until the notification is tapped.
-  
+    - The device displays the notification message in the device notification bar.
+    - If the user taps the notification, the application comes to foreground and the notification data is received in the JavaScript callback.
+    - If the user does not tap the notification but opens the application, nothing happens until the notification is tapped.
+
 ### Push Notifications on iOS
 
 On Android, push notifications don't require any special permission and can be tested from emulators freely.
 
 Unfortunately, Apple is not as nice to work with, requiring:
+
 - The running device to be a real device, no simulators allowed;
 - Application has require the `UIBackgroundModes=[remote-notification]` permission (automatically configured by this plugin);
 - The user running the application has to manually allow the application to receive push notifications;
@@ -47,14 +50,14 @@ Make sure you have ‘google-services.json’ for Android and/or ‘GoogleServic
 
 #### Preferences
 
-|Preference|Default Value|Description|
-|---|---|---|
-|ANDROID_DEFAULT_NOTIFICATION_ICON|@mipmap/ic_launcher|Default notification icon.|
-|ANDROID_FCM_VERSION|23.0.0|Native Firebase Message SDK version.<br>:warning: Replaced by BoM versioning on Gradle >= 3.4.|
-|ANDROID_FIREBASE_BOM_VERSION|29.0.1|[Firebase BoM](https://firebase.google.com/docs/android/learn-more#bom) version.|
-|ANDROID_GOOGLE_SERVICES_VERSION|4.3.4|Native Google Services SDK version.|
-|ANDROID_GRADLE_TOOLS_VERSION|4.1.0|Gradle tools version.|
-|IOS_FIREBASE_MESSAGING_VERSION|~> 7.4.0|Native Firebase Message SDK version|
+| Preference                        | Default Value       | Description                                                                                    |
+| --------------------------------- | ------------------- | ---------------------------------------------------------------------------------------------- |
+| ANDROID_DEFAULT_NOTIFICATION_ICON | @mipmap/ic_launcher | Default notification icon.                                                                     |
+| ANDROID_FCM_VERSION               | 23.0.0              | Native Firebase Message SDK version.<br>:warning: Replaced by BoM versioning on Gradle >= 3.4. |
+| ANDROID_FIREBASE_BOM_VERSION      | 29.0.1              | [Firebase BoM](https://firebase.google.com/docs/android/learn-more#bom) version.               |
+| ANDROID_GOOGLE_SERVICES_VERSION   | 4.3.4               | Native Google Services SDK version.                                                            |
+| ANDROID_GRADLE_TOOLS_VERSION      | 4.1.0               | Gradle tools version.                                                                          |
+| IOS_FIREBASE_MESSAGING_VERSION    | ~> 7.4.0            | Native Firebase Message SDK version                                                            |
 
 #### Cordova
 
@@ -107,6 +110,7 @@ ionic cordova plugin add cordova-plugin-fcm-with-dependecy-updated \
 Besides common FCM configuration (https://firebase.google.com/docs/cloud-messaging/ios/certs), the Push payload should contain "notification" and "data" keys and "click_action" equals to "FCM_PLUGIN_ACTIVITY" within "notification".
 
 Structure expected:
+
 ```js
 {
   ...,
@@ -126,47 +130,47 @@ Structure expected:
 ```
 
 Example:
+
 ```json
 {
-  "token": "[FCM token]",
-  "notification":{
-    "title":"Notification title",
-    "body":"Notification body",
-    "sound":"default",
-  },
-  "data":{
-    "param1":"value1",
-    "param2":"value2"
-  },
-  "android": {
+    "token": "[FCM token]",
     "notification": {
-      "icon":"fcm_push_icon",
-      "click_action": "FCM_PLUGIN_ACTIVITY"
+        "title": "Notification title",
+        "body": "Notification body",
+        "sound": "default"
+    },
+    "data": {
+        "param1": "value1",
+        "param2": "value2"
+    },
+    "android": {
+        "notification": {
+            "icon": "fcm_push_icon",
+            "click_action": "FCM_PLUGIN_ACTIVITY"
+        }
     }
-  }
 }
 ```
-
 
 ## Features
 
 - [As its own](#as-its-own)
-  - [FCM.clearAllNotifications()](#fcmclearallnotifications)
-  - [FCM.createNotificationChannel()](#fcmcreatenotificationchannel)
-  - [FCM.deleteInstanceId()](#fcmdeleteinstanceid)
-  - [FCM.getAPNSToken()](#fcmgetapnstoken)
-  - [FCM.getInitialPushPayload()](#fcmgetinitialpushpayload)
-  - [FCM.getToken()](#fcmgettoken)
-  - [FCM.hasPermission()](#fcmhaspermission)
-  - [FCM.onNotification()](#fcmonnotification)
-  - [FCM.onTokenRefresh()](#fcmontokenrefresh)
-  - [**FCM.requestPushPermission()**](#fcmrequestpushpermission)
-  - [FCM.subscribeToTopic()](#fcmsubscribetotopic)
-  - [FCM.unsubscribeFromTopic()](#fcmunsubscribefromtopic)
-  - [FCM.eventTarget](#fcmeventtarget)
+    - [FCM.clearAllNotifications()](#fcmclearallnotifications)
+    - [FCM.createNotificationChannel()](#fcmcreatenotificationchannel)
+    - [FCM.deleteInstanceId()](#fcmdeleteinstanceid)
+    - [FCM.getAPNSToken()](#fcmgetapnstoken)
+    - [FCM.getInitialPushPayload()](#fcmgetinitialpushpayload)
+    - [FCM.getToken()](#fcmgettoken)
+    - [FCM.hasPermission()](#fcmhaspermission)
+    - [FCM.onNotification()](#fcmonnotification)
+    - [FCM.onTokenRefresh()](#fcmontokenrefresh)
+    - [**FCM.requestPushPermission()**](#fcmrequestpushpermission)
+    - [FCM.subscribeToTopic()](#fcmsubscribetotopic)
+    - [FCM.unsubscribeFromTopic()](#fcmunsubscribefromtopic)
+    - [FCM.eventTarget](#fcmeventtarget)
 - [**With Ionic**](#with-ionic)
-  - [FCM.onNotification()](#fcmonnotification-1)
-  - [FCM.onTokenRefresh()](#fcmontokenrefresh-1)
+    - [FCM.onNotification()](#fcmonnotification-1)
+    - [FCM.onTokenRefresh()](#fcmontokenrefresh-1)
 
 #### As its own
 
@@ -175,8 +179,9 @@ The JS functions are now as written bellow and do require Promise support. Which
 ##### FCM.clearAllNotifications()
 
 Removes existing push notifications from the notifications center.
+
 ```typescript
-await FCM.clearAllNotifications();
+await FCM.clearAllNotifications()
 ```
 
 ##### FCM.createNotificationChannel()
@@ -184,36 +189,40 @@ await FCM.clearAllNotifications();
 For Android, some notification properties are only defined programmatically.
 Channel can define the default behavior for notifications on Android 8.0+.
 Once a channel is created, it stays unchangeable until the user uninstalls the app.
+
 ```typescript
 await FCM.createNotificationChannel({
-  id: "urgent_alert", // required
-  name: "Urgent Alert", // required
-  description: "Very urgent message alert",
-  importance: "high", // https://developer.android.com/guide/topics/ui/notifiers/notifications#importance
-  visibility: "public", // https://developer.android.com/training/notify-user/build-notification#lockscreenNotification
-  sound: "alert_sound", // In the "alert_sound" example, the file should located as resources/raw/alert_sound.mp3
-  lights: true, // enable lights for notifications
-  vibration: true // enable vibration for notifications
-});
+    id: 'urgent_alert', // required
+    name: 'Urgent Alert', // required
+    description: 'Very urgent message alert',
+    importance: 'high', // https://developer.android.com/guide/topics/ui/notifiers/notifications#importance
+    visibility: 'public', // https://developer.android.com/training/notify-user/build-notification#lockscreenNotification
+    sound: 'alert_sound', // In the "alert_sound" example, the file should located as resources/raw/alert_sound.mp3
+    lights: true, // enable lights for notifications
+    vibration: true // enable vibration for notifications
+})
 ```
 
 ##### FCM.deleteInstanceId()
 
 Deletes the InstanceId, revoking all tokens.
+
 ```typescript
-await FCM.deleteInstanceId();
+await FCM.deleteInstanceId()
 ```
 
 ##### FCM.getAPNSToken()
 
 Gets iOS device's current APNS token.
+
 ```typescript
-const apnsToken: string = await FCM.getAPNSToken();
+const apnsToken: string = await FCM.getAPNSToken()
 ```
 
 ##### FCM.getInitialPushPayload()
 
 Retrieves the message that, on tap, opened the app. And `null`, if the app was open normally.
+
 ```typescript
 const pushPayload: object = await FCM.getInitialPushPayload()
 ```
@@ -221,6 +230,7 @@ const pushPayload: object = await FCM.getInitialPushPayload()
 ##### FCM.getToken()
 
 Gets device's current registration id.
+
 ```typescript
 const fcmToken: string = await FCM.getToken()
 ```
@@ -228,6 +238,7 @@ const fcmToken: string = await FCM.getToken()
 ##### FCM.hasPermission()
 
 Checking for permissions on iOS. On android, it always returns `true`.
+
 ```typescript
 const doesIt: boolean = await FCM.hasPermission()
 ```
@@ -235,9 +246,10 @@ const doesIt: boolean = await FCM.hasPermission()
 ##### FCM.onNotification()
 
 Callback firing when receiving new notifications. It serves as a shortcut to listen to eventTarget's "notification" event.
+
 ```typescript
 const disposable = FCM.onNotification((payload: object) => {
-  // ...
+    // ...
 })
 // ...
 disposable.dispose() // To remove listener
@@ -248,9 +260,10 @@ disposable.dispose() // To remove listener
 ##### FCM.onTokenRefresh()
 
 Callback firing when receiving a new Firebase token. It serves as a shortcut to listen to eventTarget's "tokenRefresh" event.
+
 ```typescript
 const disposable = FCM.onTokenRefresh((fcmToken: string) => {
-  // ...
+    // ...
 })
 // ...
 disposable.dispose() // To remove listener
@@ -260,12 +273,13 @@ disposable.dispose() // To remove listener
 
 Request push notification permission on iOS, alerting the user if he/she/they have not yet accepted or denied.
 For Android, it'll always return true.
+
 ```typescript
 const wasPermissionGiven: boolean = await FCM.requestPushPermission({
-  ios9Support: {
-    timeout: 10,  // How long it will wait for a decision from the user before returning `false`
-    interval: 0.3 // How long between each permission verification
-  }
+    ios9Support: {
+        timeout: 10, // How long it will wait for a decision from the user before returning `false`
+        interval: 0.3 // How long between each permission verification
+    }
 })
 ```
 
@@ -275,6 +289,7 @@ const wasPermissionGiven: boolean = await FCM.requestPushPermission({
 ##### FCM.subscribeToTopic()
 
 Subscribes you to a [topic](https://firebase.google.com/docs/notifications/android/console-topics).
+
 ```typescript
 const topic: string
 // ...
@@ -284,6 +299,7 @@ await FCM.subscribeToTopic(topic)
 ##### FCM.unsubscribeFromTopic()
 
 Unsubscribes you from a [topic](https://firebase.google.com/docs/notifications/android/console-topics).
+
 ```typescript
 const topic: string
 // ...
@@ -293,30 +309,37 @@ await FCM.unsubscribeFromTopic(topic)
 ##### FCM.eventTarget
 
 EventTarget object for native-sourced custom events. Useful for more advanced listening handling.
+
 ```typescript
 const listener = (data) => {
-  const payload = data.detail
-  // ...
+    const payload = data.detail
+    // ...
 }
-FCM.eventTarget.addEventListener("notification", listener, false);
+FCM.eventTarget.addEventListener('notification', listener, false)
 // ...
-FCM.eventTarget.removeEventListener("notification", listener, false);
+FCM.eventTarget.removeEventListener('notification', listener, false)
 ```
 
 #### With Ionic
 
 Ionic support was implemented as part of this plugin to allow users to have access to newer features with the type support. It is available in 3 flavors:
+
 - Ionic v5:
+
 ```typescript
-import { FCM } from "cordova-plugin-fcm-with-dependecy-updated/ionic";
+import { FCM } from 'cordova-plugin-fcm-with-dependecy-updated/ionic'
 ```
+
 - Ionic ngx:
+
 ```typescript
-import { FCM } from "cordova-plugin-fcm-with-dependecy-updated/ionic/ngx";
+import { FCM } from 'cordova-plugin-fcm-with-dependecy-updated/ionic/ngx'
 ```
+
 - Ionic v4 (also works for Ionic v3):
+
 ```typescript
-import { FCM } from "cordova-plugin-fcm-with-dependecy-updated/ionic/v4";
+import { FCM } from 'cordova-plugin-fcm-with-dependecy-updated/ionic/v4'
 ```
 
 It brings the same behavior as the native implementation, except for `FCM.onNotification()` and `FCM.onTokenRefresh()`, which gain rxjs' Observable support.
@@ -326,19 +349,21 @@ To avoid confusion, it's suggested to also remove the redundant @ionic-native/fc
 ##### FCM.onNotification()
 
 Event firing when receiving new notifications.
+
 ```typescript
 this.fcm.onNotification().subscribe((payload: object) => {
-  // ...
-});
+    // ...
+})
 ```
 
 ##### FCM.onTokenRefresh()
 
 Event firing when receiving a new Firebase token.
+
 ```typescript
 this.fcm.onTokenRefresh().subscribe((token: string) => {
-  // ...
-});
+    // ...
+})
 ```
 
 ## Example Apps
@@ -361,7 +386,7 @@ https://github.com/andrehtissot/cordova-plugin-fcm-with-dependecy-updated-ionic-
 
 After a lot of work, the first release of the plugin is out. Which should enable the support, just by installing it.
 
-Link: https://github.com/andrehtissot/cordova-plugin-fcm-image-support 
+Link: https://github.com/andrehtissot/cordova-plugin-fcm-image-support
 
 ### Optional standalone Cocoapods CDN source switcher
 
@@ -370,4 +395,126 @@ When the environment supports, the cocoapods source is automatically set to the 
 Link: https://github.com/andrehtissot/cordova-plugin-cocoapods-cdn
 
 ## Authorship
+
 This started as a fork from https://github.com/fechanique/cordova-plugin-fcm and, gradually, had most of its implementation rewritten and improved, for newer dependency versions support, jitpack and cocoapods support, and new useful features.
+
+## Setup per runtime
+
+The package is `cordova-plugin-fcm-modern` 8.0.0. `dist/` is committed, so a
+git-tag or Cordova plugin-fetch install needs no build step, and installing it
+runs no lifecycle hook that downloads a tool. Delivery is best-effort: duplicates
+and missed deliveries are both possible (see `docs/SECURITY.md`).
+
+Your app owns the Firebase configuration. Put `google-services.json` (Android)
+and/or `GoogleService-Info.plist` (iOS) in the project root; the plugin never
+copies a Firebase config it did not receive from you. The Node >= 24 requirement
+in `package.json` `engines` applies to this package's own dev/test toolchain, not
+to the app that consumes it.
+
+| Preference                          | Default               | Notes                                                                     |
+| ----------------------------------- | --------------------- | ------------------------------------------------------------------------- |
+| `ANDROID_DEFAULT_NOTIFICATION_ICON` | `@mipmap/ic_launcher` | Default notification icon.                                                |
+| `ANDROID_FIREBASE_BOM_VERSION`      | `35.1.0`              | Firebase BoM the gradle reference resolves; the host app owns Gradle/AGP. |
+| `ANDROID_GOOGLE_SERVICES_VERSION`   | `4.5.0`               | google-services plugin, applied at most once per module.                  |
+| `ANDROID_GRADLE_TOOLS_VERSION`      | `8.1.0`               | Gradle tools version.                                                     |
+| `IOS_FIREBASE_MESSAGING_VERSION`    | `~> 13.1.1`           | CocoaPods spec for `Firebase/Messaging`.                                  |
+
+### Cordova app
+
+```sh
+npm install -g cordova@latest        # plugin.xml requires cordova >= 11
+npm uninstall @ionic-native/fcm      # this package ships the Ionic wrappers itself
+cordova plugin add cordova-plugin-fcm-modern \
+  --variable ANDROID_FIREBASE_BOM_VERSION="35.1.0" \
+  --variable IOS_FIREBASE_MESSAGING_VERSION="~> 13.1.1"
+```
+
+`window.FCM` still exists (`plugin.xml` keeps the `FCMPlugin` js-module that
+clobbers `FCM`). Import paths: `.` picks the ambient runtime, `./cordova` and
+`./capacitor` pin one explicitly, `./core` is the runtime-free core. Android
+needs AndroidX (the plugin injects the `AndroidXEnabled` preference); iOS gets
+`aps-environment`, `UIBackgroundModes=[remote-notification]` and
+`FirebaseAppDelegateProxyEnabled=false`, and `AppDelegate` forwarding is
+documented rather than swizzled.
+
+### Capacitor app
+
+```sh
+npm i cordova-plugin-fcm-modern @capacitor/core
+npx cap add android && npx cap add ios && npx cap sync
+```
+
+Import `cordova-plugin-fcm-modern/capacitor` (or the runtime-selecting root). One
+registered native plugin and one `FirebaseMessagingService` serve the app: do not
+install a second FCM plugin and do not register both bridges. `@capacitor/core`
+and `rxjs`/`@angular/core` are optional peers — a Cordova-only app never needs
+them, and `@capacitor/core` is loaded through a dynamic `import()`.
+
+### Ionic / Angular app
+
+```ts
+import { FCM } from 'cordova-plugin-fcm-modern/ionic' // RxJS wrappers
+import { provideFCM } from 'cordova-plugin-fcm-modern/ionic/ngx' // provider factory
+import { FCM } from 'cordova-plugin-fcm-modern/ionic/v4' // Ionic v3/v4
+```
+
+Angular integration is the `provideFCM()` factory — the shipped JS contains no
+uncompilable raw decorators, and the AOT consumer fixture is compiled with real
+`ngc` in `npm run test:aot`. Unsubscribing an RxJS observable disposes the
+underlying native listener.
+
+### Web / SSR
+
+Importing any entrypoint outside a browser is safe and never touches `window`;
+every native call rejects with `FCMError` code `unsupported_platform`. There is
+no browser push implementation — serve web push from your own service worker.
+
+### Payloads to send
+
+Send `notification` + `data`; do **not** set
+`android.notification.click_action = "FCM_PLUGIN_ACTIVITY"` anymore (see
+`docs/MIGRATION.md` §8). Foreground messages arrive as events unless you opt into
+presentation with `FCM.configureForegroundPresentation()`.
+
+### Dependency scanning
+
+`npm run audit` only sees the npm dependency graph: it cannot assess the Firebase
+Android/iOS SDKs, which are resolved by Gradle/CocoaPods inside your app. CI
+therefore fails on unresolved findings in both graphs — `osv-scanner` against
+`package-lock.json`, plus a Gradle dependency-lock scan step that is **configured
+but not yet passed** (the Android fixtures it needs do not exist yet). See
+`docs/VALIDATION.md` for the passed/configured/pending split.
+
+## Migration from 7.x
+
+Full behaviour diff in `docs/MIGRATION.md`; the short version:
+
+- **Renamed package**: `cordova-plugin-fcm-with-dependecy-updated` →
+  `cordova-plugin-fcm-modern`. Android classes moved from
+  `com.gae.scaffolder.plugin.*` to `dev.rifan.fcmmodern.*`; the legacy classes are
+  no longer installed.
+- **`deleteInstanceId()` is a token delete**, kept as the alias of the new
+  `deleteToken()`. It revokes this app instance's FCM registration token — it
+  never deletes the Firebase installation, config files or other Firebase
+  features. Re-subscribe topics after the token is regenerated.
+- **No automatic topics.** 7.x subscribed `all`/`android`/`ios` on start; 8.x
+  subscribes nothing until you call `subscribeToTopic()` or pass
+  `autoSubscribeTopics`.
+- **Foreground delivery is event-only** by default; OS presentation is opt-in via
+  `configureForegroundPresentation()`.
+- **Permission prompts are explicit**: `requestPushPermission()` is the only API
+  that can show one, and `hasPermission()` on Android API 33+ now reports the real
+  `POST_NOTIFICATIONS` state instead of always `true`.
+- **`getInitialPushPayload()` returns only the tap that opened the app**, is
+  cached, and reading it does not consume the event.
+- **Trusted metadata cannot be spoofed**: reserved keys win over sender `data`,
+  collisions are preserved under `custom` and listed in `_fcm.collisions`, and
+  `__proto__`/`constructor`/`prototype` are dropped and listed in `_fcm.dropped`.
+- **`FCM_PLUGIN_ACTIVITY` is gone**: the tap target is an internal, unexported
+  activity reached through an immutable, explicit-component `PendingIntent`, and
+  remote payloads never open a URL.
+- **`ios9Support` is accepted and ignored**; use `provisional` on iOS instead.
+- **Unsupported calls reject** with an `FCMError` code
+  (`unsupported_platform`, `bridge_unavailable`, `invalid_argument`,
+  `native_error`, `timeout`, `not_initialized`) instead of resolving `undefined`.
+- **Install-time hooks are gone**: no shell hook, no nested `ionic` install.
