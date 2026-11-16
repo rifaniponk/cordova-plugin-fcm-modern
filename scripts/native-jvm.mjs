@@ -75,20 +75,22 @@ if (compile.status !== 0) {
     process.exit(1)
 }
 
-const run = spawnSync(
-    toolchainBin('java'),
-    ['-cp', outDir, 'dev.rifan.fcmmodern.core.FcmEventBusTest'],
-    {
-        encoding: 'utf8'
+const testClasses = javaSources(join(root, 'tests', 'android', 'dev')).map((source) => {
+    const pkg = /package\s+([\w.]+);/.exec(readFileSync(source, 'utf8'))?.[1] ?? ''
+    const name = basename(source).replace(/\.java$/, '')
+    return pkg ? `${pkg}.${name}` : name
+})
+
+for (const testClass of testClasses.sort()) {
+    const run = spawnSync(toolchainBin('java'), ['-cp', outDir, testClass], { encoding: 'utf8' })
+    if (run.status !== 0) {
+        console.error(run.stdout ?? '')
+        console.error(run.stderr ?? '')
+        console.error(`[native-jvm] FAILED — ${testClass} exited non-zero`)
+        process.exit(1)
     }
-)
-if (run.status !== 0) {
     console.error(run.stdout ?? '')
-    console.error(run.stderr ?? '')
-    console.error('[native-jvm] FAILED — behavior test exited non-zero')
-    process.exit(1)
 }
-console.error(run.stdout ?? '')
 
 // Keep the harness honest: every shipped dev-core source must be compiled.
 for (const source of javaSources(join(root, 'src', 'android', 'dev'))) {
